@@ -49,7 +49,7 @@ async function main() {
         const luckyRank = games.findIndex(g => g.appId === luckyGame.appId) + 1;
         console.log(`\n[${idx + 1}/${BATCH_SIZE}] ${luckyRank}위: ${luckyGame.title} 분석 중...`);
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         let reportText = "";
         let attempt = 1;
 
