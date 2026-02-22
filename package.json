@@ -1,0 +1,9 @@
+{
+  "name": "gcp-data-lake",
+  "version": "1.0.0",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "google-play-scraper": "^10.0.0",
+    "googleapis": "^133.0.0"
+  }
+}
