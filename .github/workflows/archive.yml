@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '20'
           
-      # ★ [핵심] 우분투 서버에 한글 폰트 강제 설치 (네트워크 폰트 다운로드 에러 원천 차단)
+      # 우분투 서버에 한글 폰트 강제 설치 (네트워크 폰트 다운로드 에러 원천 차단)
       - name: Install Korean Fonts
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
         
