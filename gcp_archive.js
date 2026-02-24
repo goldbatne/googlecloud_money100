@@ -15,7 +15,7 @@ const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
 const BATCH_SIZE = 100; 
-const MAX_RETRIES = 4; 
+const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -285,7 +285,7 @@ async function main() {
                     finalFixedMermaid = fastTrackCode; 
                 } else {
                     console.log(`  -> ⚠️ [Fast-Track 실패] AI 딥러닝 교정 루프 진입...`);
-                    const MAX_QA_RETRIES = 2; 
+                    const MAX_QA_RETRIES = 5; 
                     let currentMermaid = originalMermaid;
                     let qaSuccess = false;
 
