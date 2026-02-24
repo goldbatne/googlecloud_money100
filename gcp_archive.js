@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const stream = require('stream');
 const zlib = require('zlib');
+const { mdToPdf } = require('md-to-pdf'); // ★ PDF 라이브러리 탑재
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCP_CLIENT_ID,
@@ -12,8 +13,8 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 50; 
-const MAX_RETRIES = 3; 
+const BATCH_SIZE = 50; // 50개 가동 유지
+const MAX_RETRIES = 3; // 503 에러 방어용 재시도 횟수
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -40,6 +41,7 @@ function getKrokiUrl(text) {
   return `https://kroki.io/mermaid/svg/${base64}`;
 }
 
+// 무결점 토크나이저 수술대
 function sanitizeMermaid(rawCode) {
   let fixed = rawCode.replace(/\/\/.*$/gm, '').replace(/%%.*$/gm, '').trim();
   fixed = fixed.replace(/["'*#]/g, ''); 
@@ -145,13 +147,11 @@ async function main() {
     const dateString = now.toISOString().split('T')[0];
     const yearStr = String(now.getFullYear());
     const monthStr = String(now.getMonth() + 1).padStart(2, '0') + "월";
-    // ★ [일일 폴더링 추가]
     const dayStr = String(now.getDate()).padStart(2, '0') + "일";
 
     let successCount = 0;
 
     if (allGames.length > 0) {
-      // ★ [3단 폴더 트리 생성: 년 -> 월 -> 일]
       const yearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
       const monthId = await getOrCreateFolder(monthStr, yearId);
       const targetFolderId = await getOrCreateFolder(dayStr, monthId);
@@ -251,6 +251,7 @@ async function main() {
         let lastIndex = 0;
         let isMermaidBroken = false; 
         
+        // ★ MD와 PDF 모두에서 다이어그램이 보이도록 텍스트 자체를 이미지 링크로 치환
         for (const match of [...reportText.matchAll(mermaidRegex)]) {
             newReportText += reportText.substring(lastIndex, match.index);
             let fastTrackCode = sanitizeMermaid(match[1]);
@@ -260,15 +261,16 @@ async function main() {
                 const fastRes = await fetch(fastUrl);
                 const fastSvg = await fastRes.text();
                 if (fastRes.ok && !fastSvg.includes('Syntax error') && !fastSvg.includes('SyntaxError')) {
-                    console.log(`  -> ⚡ [Fast-Track 성공] 로컬 수술대 정규식 교정 완료!`);
-                    newReportText += "```mermaid\n" + fastTrackCode + "\n```";
+                    console.log(`  -> ⚡ [Fast-Track 성공] 다이어그램을 이미지로 치환 완료!`);
+                    newReportText += `\n\n![시스템 다이어그램](${fastUrl})\n\n`;
                 } else {
                     console.log(`  -> 🚨 [품질 미달] 수술 불가능한 외계어 다이어그램 감지.`);
                     isMermaidBroken = true; 
                     break; 
                 }
             } catch (e) {
-                newReportText += "```mermaid\n" + fastTrackCode + "\n```"; 
+                isMermaidBroken = true;
+                break;
             }
             lastIndex = match.index + match[0].length;
         }
@@ -295,19 +297,49 @@ async function main() {
         }
 
         const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
-        const fileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName}).md`;
-
-        const bufferStream = new stream.PassThrough();
-        bufferStream.end(Buffer.from(reportText, 'utf8'));
+        const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
         try {
+          // [1] 마크다운(.md) 파일 저장
+          const mdStream = new stream.PassThrough();
+          mdStream.end(Buffer.from(reportText, 'utf8'));
           await drive.files.create({
-            requestBody: { name: fileName, parents: [targetFolderId] }, // ★ [일(Day) 폴더에 저장]
-            media: { mimeType: 'text/markdown', body: bufferStream }
+            requestBody: { name: `${baseFileName}.md`, parents: [targetFolderId] },
+            media: { mimeType: 'text/markdown', body: mdStream }
           });
-          console.log(`  -> 💾 적재 완료: ${yearStr}/${monthStr}/${dayStr}/${fileName}`);
+          console.log(`  -> 💾 [MD] 저장 완료`);
+
+          // [2] PDF(.pdf) 파일 변환 및 저장
+          console.log(`  -> 📄 [PDF] 변환 시작... (약 5초 소요)`);
+          const pdfData = await mdToPdf({ content: reportText }, {
+              launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }, // 깃허브 액션 리눅스 권한 에러 방어
+              css: `
+                  @import url('[https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap](https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap)');
+                  body { font-family: 'Noto Sans KR', sans-serif; line-height: 1.6; color: #333; }
+                  h1, h2, h3 { color: #111; margin-top: 24px; border-bottom: 1px solid #eaeaea; padding-bottom: 8px;}
+                  img { max-width: 100%; height: auto; display: block; margin: 20px auto; }
+                  table { border-collapse: collapse; width: 100%; margin: 20px 0; font-size: 0.9em; }
+                  th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                  th { background-color: #f4f4f4; color: #333; font-weight: bold; }
+                  code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; }
+              `,
+              pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
+          });
+
+          const pdfStream = new stream.PassThrough();
+          pdfStream.end(pdfData.content);
+          await drive.files.create({
+            requestBody: { name: `${baseFileName}.pdf`, parents: [targetFolderId] },
+            media: { mimeType: 'application/pdf', body: pdfStream }
+          });
+          console.log(`  -> 💾 [PDF] 저장 완료: ${baseFileName}.pdf`);
+
+          // MD와 PDF 모두 정상 저장 시에만 카운트 증가
           successCount++;
-        } catch (e) { console.error(`  -> ❌ 드라이브 업로드 실패: ${e.message}`); }
+          
+        } catch (e) { 
+            console.error(`  -> ❌ 파일 저장 중 에러 발생: ${e.message}`); 
+        }
 
         if (idx < targetGames.length - 1) await delay(30000); 
       }
@@ -315,7 +347,7 @@ async function main() {
       console.log(`\n======================================================`);
       console.log(`[${dateString}] 📊 최종 결산 리포트`);
       console.log(`- 목표 처리량: ${targetGames.length}개`);
-      console.log(`- 적재 성공량: ${successCount}개`);
+      console.log(`- 적재 성공량 (MD+PDF 세트): ${successCount}개`);
       console.log(`- 불량 폐기량: ${targetGames.length - successCount}개`);
       console.log(`🎉 구글 드라이브 동기화 작업이 모두 종료되었습니다.`);
       console.log(`======================================================\n`);
