@@ -13,7 +13,7 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 10; 
+const BATCH_SIZE = 50; // 실전 가동용 50개 세팅
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -187,7 +187,7 @@ async function main() {
 
         console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중 (API Core ${ (idx % apiKeys.length) + 1 } 사용)`);
 
-        // ★ [노션 완벽 동기화] 노션 파이프라인에서 검증된 '수석 기획자 8단계 프롬프트' 100% 이식
+        // ★ [프롬프트 최적화] 노션 파이프라인의 8단계 수석 기획자 프롬프트 100% 이식
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -244,25 +244,25 @@ async function main() {
           continue; 
         }
 
-        // 반복 출력 방지 (노션 스크립트와 동일)
         let metaMatches = [...reportText.matchAll(/메인장르:/g)];
         if (metaMatches.length > 1) {
             let lastMetaIndex = metaMatches[metaMatches.length - 1].index;
             reportText = reportText.substring(lastMetaIndex);
         }
 
-        // ★ [노션 완벽 동기화] 메타데이터 텍스트 파싱 및 파일명 추출
+        // ★ [데이터 파싱 및 정리] JSON 블록 대신 텍스트 기반 메타데이터 추출
         let coreSystemName = "시스템_통합_분석"; 
         const systemMatch = reportText.match(/시스템:\s*([^\n]+)/);
         if (systemMatch) {
             coreSystemName = systemMatch[1].replace(/\[\/META\]/gi, '').replace(/[/\\?%*:|"<>]/g, '_').trim();
         }
 
-        // 본문에서 메타데이터 3줄을 삭제하고 깔끔한 헤더를 주입
+        // 본문 최상단의 메타데이터 텍스트를 제거
         reportText = reportText.replace(/메인장르:.*?\n/g, '')
                                .replace(/서브장르:.*?\n/g, '')
                                .replace(/시스템:.*?\n/g, '').trim();
 
+        // 노션 스타일의 깔끔한 요약 헤더를 강제 주입
         const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 역기획서
 > **분석 시스템:** ${coreSystemName}
@@ -326,6 +326,7 @@ async function main() {
           // [2] PDF(.pdf) 파일 변환 및 저장
           console.log(`  -> 📄 [PDF] 변환 시작... (약 5초 소요)`);
           
+          // ★ [핵심] 작동이 검증된 PDF 변환 및 노션 판박이 CSS 스타일링 적용
           const pdfData = await mdToPdf({ content: reportText }, {
               highlight_style: '', 
               launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
