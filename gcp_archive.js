@@ -217,6 +217,7 @@ async function main() {
         
         for (let initAttempt = 1; initAttempt <= MAX_RETRIES; initAttempt++) {
             try {
+                await delay(5000); // ★ 5초 절대 냉각 (429 에러 원천 차단)
                 const draftResult = await model.generateContent(prompt);
                 reportText = draftResult.response.text();
                 draftSuccess = true;
