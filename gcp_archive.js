@@ -14,7 +14,7 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 100; // ★ 매일 100개 풀가동 모드 확정
+const BATCH_SIZE = 3; // ★ 매일 100개 풀가동 모드
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -174,8 +174,20 @@ async function main() {
         const genAI = new GoogleGenerativeAI(currentKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
+        // ★ [NEW] 5대 기획 카테고리 룰렛 로직 추가
+        const categories = [
+            "핵심 BM (가챠/강화/패스 등 직접적 매출원)",
+            "장기 리텐션 (일일 숙제/업적/마일리지 등 접속 유지 장치)",
+            "소셜 및 경쟁 (길드/PvP/랭킹 등 유저 간 상호작용)",
+            "성장 및 경제 (재화 획득/소모처 및 인플레이션 제어 로직)",
+            "코어 게임플레이 (전투 공식/스테이지 기믹/퍼즐 등 조작의 재미)"
+        ];
+        const randomCategory = categories[Math.floor(Math.random() * categories.length)];
 
+        console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
+        console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}]`);
+
+        // ★ 프롬프트: 룰렛에서 뽑힌 카테고리 주입 및 고유명사 타겟팅 강제
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -183,6 +195,7 @@ async function main() {
 
 # Input
 * **타겟 게임:** [${luckyGame.developer}]의 ${luckyGame.title} (구글 매출 ${luckyRank}위)
+* **분석 타겟 영역:** ${randomCategory}
 
 # Step 0: 메타데이터 정의 (절대 수정 금지)
 본문 작성 전 최상단에 반드시 다음 3줄을 작성하십시오.
@@ -191,8 +204,8 @@ async function main() {
 시스템: (15자 이내 명사형, 파일명에 사용될 핵심 시스템명)
 
 # Step 1: 정확한 인게임 고유명사 타겟팅
-1. 2026년 오늘 날짜를 기준으로 검색하여, 타겟 게임의 매출을 견인하는 시그니처 시스템 1개를 특정하십시오.
-2. 이때 '캐릭터 뽑기', '장비 강화' 같은 제너릭한 일반 명사를 절대 사용하지 마십시오. 반드시 해당 게임 유저들이 실제로 부르는 **정확한 인게임 고유명사(예: '원신 - 기원', '리니지 - 룸티스의 귀걸이', '승리의 여신: 니케 - 싱크로 디바이스')**를 분석 대상으로 명시하고 이를 기반으로 역기획을 전개하십시오.
+1. 2026년 오늘 날짜를 기준으로 검색하여, 타겟 게임에서 **[${randomCategory}]** 영역을 대표하는 시그니처 시스템 1개를 특정하십시오.
+2. 이때 '캐릭터 뽑기', '길드전', '강화' 같은 제너릭한 일반 명사를 절대 사용하지 마십시오. 반드시 해당 게임 유저들이 실제로 부르는 **정확한 인게임 고유명사(예: '원신 - 기원', '리니지 - 공성전', '승리의 여신: 니케 - 싱크로 디바이스')**를 분석 대상으로 명시하고 이를 기반으로 역기획을 전개하십시오.
 
 # Step 2: 실무형 역기획서 작성 (Strict Format)
 아래 8단계 구조에 맞춰 마크다운 형식으로 작성하십시오.
@@ -218,7 +231,7 @@ async function main() {
         
         for (let initAttempt = 1; initAttempt <= MAX_RETRIES; initAttempt++) {
             try {
-                await delay(5000); // ★ 5초 절대 냉각 (429 에러 방어선)
+                await delay(5000); 
                 const draftResult = await model.generateContent(prompt);
                 reportText = draftResult.response.text();
                 draftSuccess = true;
@@ -251,9 +264,11 @@ async function main() {
                                .replace(/서브장르:.*?\n/g, '')
                                .replace(/시스템:.*?\n/g, '').trim();
 
+        // 제목에도 어떤 카테고리가 뽑혔는지 명시하여 문서의 가독성을 높임
         const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 역기획서
-> **분석 시스템:** ${coreSystemName}
+> **분석 타겟:** ${randomCategory}
+> **핵심 시스템:** ${coreSystemName}
 > **개발사:** ${luckyGame.developer}
 > **작성일:** ${dateString}
 
@@ -307,7 +322,7 @@ ${currentMermaid}
                         let qaResultText = "";
                         for(let qaTry=1; qaTry<=3; qaTry++) {
                             try {
-                                await delay(5000); // ★ QA 루프에도 5초 안전 쿨타임 적용
+                                await delay(5000); 
                                 let res = await model.generateContent(qaPrompt);
                                 qaResultText = res.response.text();
                                 break;
@@ -376,7 +391,6 @@ ${currentMermaid}
         let pdfSaved = false;
         let htmlSaved = false;
 
-        // [1] 마크다운(.md) 독립 검증 및 저장
         try {
           if (!mdText || mdText.length < 10) throw new Error("MD 데이터가 비어있습니다.");
           const mdStream = new stream.PassThrough();
@@ -389,7 +403,6 @@ ${currentMermaid}
           mdSaved = true;
         } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
 
-        // [2] PDF 독립 검증 및 저장
         try {
           console.log(`  -> 📄 [PDF] 변환 시작...`);
           const pdfData = await mdToPdf({ content: pdfText }, {
@@ -424,7 +437,6 @@ ${currentMermaid}
           pdfSaved = true;
         } catch (e) { console.error(`  -> ❌ [PDF] 변환/저장 실패: ${e.message}`); }
 
-        // [3] HTML 독립 검증 및 저장
         try {
           console.log(`  -> 🌐 [HTML] 변환 시작...`);
           const parsedHtmlBody = marked.parse(pdfText); 
@@ -475,12 +487,11 @@ ${currentMermaid}
           htmlSaved = true;
         } catch (e) { console.error(`  -> ❌ [HTML] 변환/저장 실패: ${e.message}`); }
 
-        // [최종 결산] 3개 중 하나라도 저장되었다면 부분 성공으로 간주
         if (mdSaved && pdfSaved && htmlSaved) {
             successCount++;
         } else if (mdSaved || pdfSaved || htmlSaved) {
             console.log(`  -> ⚠️ 일부 포맷 저장 실패 (MD:${mdSaved}, PDF:${pdfSaved}, HTML:${htmlSaved})`);
-            successCount++; // 부분 성공도 카운트
+            successCount++; 
         } else {
             console.error(`  -> ❌ 모든 포맷 저장 실패`);
         }
