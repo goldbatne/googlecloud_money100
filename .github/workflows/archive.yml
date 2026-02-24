@@ -2,8 +2,8 @@ name: GCP Data Lake Archive
 
 on:
   schedule:
-    # UTC 20:00 = KST 05:00 (한국 시간 매일 새벽 5시 실행)
-    - cron: '0 20 * * *' 
+    # UTC 21:00 = KST 06:00 (한국 시간 매일 새벽 5시 실행)
+    - cron: '0 21 * * *' 
   workflow_dispatch: # 수동 실행 버튼
 
 jobs:
