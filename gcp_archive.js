@@ -145,29 +145,24 @@ async function main() {
     const now = new Date();
     now.setHours(now.getHours() + 9);
     const dateString = now.toISOString().split('T')[0];
-    const yearStr = String(now.getFullYear()) + "년"; // 예: 2026년
-    const monthStr = String(now.getMonth() + 1).padStart(2, '0') + "월"; // 예: 02월
-    const dayStr = String(now.getDate()).padStart(2, '0') + "일"; // 예: 25일
+    const yearStr = String(now.getFullYear()) + "년"; 
+    const monthStr = String(now.getMonth() + 1).padStart(2, '0') + "월"; 
+    const dayStr = String(now.getDate()).padStart(2, '0') + "일"; 
 
     let successCount = 0;
 
     if (allGames.length > 0) {
       
-      // ★ [NEW] 모든 뎁스에 포맷 꼬리표(_md, _pdf, _html) 강제 부착
-      // Depth 1
       const mainYearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
       
-      // Depth 2
       const mdFormatId = await getOrCreateFolder(`${yearStr}_md`, mainYearId);
       const pdfFormatId = await getOrCreateFolder(`${yearStr}_pdf`, mainYearId);
       const htmlFormatId = await getOrCreateFolder(`${yearStr}_html`, mainYearId);
 
-      // Depth 3 (월 단위에도 포맷 부착)
       const mdMonthId = await getOrCreateFolder(`${monthStr}_md`, mdFormatId);
       const pdfMonthId = await getOrCreateFolder(`${monthStr}_pdf`, pdfFormatId);
       const htmlMonthId = await getOrCreateFolder(`${monthStr}_html`, htmlFormatId);
 
-      // Depth 4 (일 단위에도 포맷 부착 - 최종 목적지)
       const mdFolderId = await getOrCreateFolder(`${dayStr}_md`, mdMonthId);
       const pdfFolderId = await getOrCreateFolder(`${dayStr}_pdf`, pdfMonthId);
       const htmlFolderId = await getOrCreateFolder(`${dayStr}_html`, htmlMonthId);
@@ -195,6 +190,7 @@ async function main() {
         console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
         console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}]`);
 
+        // ★ 프롬프트 업데이트: 한국 서버 기준 공식 명칭 강제
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -212,7 +208,7 @@ async function main() {
 
 # Step 1: 정확한 인게임 고유명사 타겟팅
 1. 2026년 오늘 날짜를 기준으로 검색하여, 타겟 게임에서 **[${randomCategory}]** 영역을 대표하는 시그니처 시스템 1개를 특정하십시오.
-2. 이때 '캐릭터 뽑기', '길드전', '강화' 같은 제너릭한 일반 명사를 절대 사용하지 마십시오. 반드시 해당 게임 유저들이 실제로 부르는 **정확한 인게임 고유명사(예: '원신 - 기원', '리니지 - 공성전', '승리의 여신: 니케 - 싱크로 디바이스')**를 분석 대상으로 명시하고 이를 기반으로 역기획을 전개하십시오.
+2. 이때 '캐릭터 뽑기', '길드전', '강화' 같은 제너릭한 일반 명사를 절대 사용하지 마십시오. 반드시 해당 게임의 **한국 서버 기준 정확한 공식 인게임 고유명사(예: '원신 - 기원', '리니지 - 공성전', '승리의 여신: 니케 - 싱크로 디바이스')**를 최우선으로 검색하여 분석 대상으로 명시하고 이를 기반으로 역기획을 전개하십시오. 영문 직역은 피하십시오.
 
 # Step 2: 실무형 역기획서 작성 (Strict Format)
 아래 8단계 구조에 맞춰 마크다운 형식으로 작성하십시오.
@@ -244,9 +240,19 @@ async function main() {
                 draftSuccess = true;
                 break;
             } catch (apiError) {
-                console.log(`  -> 🚨 진짜 에러 원인: ${apiError.message}`); 
-                console.log(`  -> ⚠️ 서버 과부하 감지. 15초 냉각 후 재시도 (${initAttempt}/${MAX_RETRIES})...`);
-                await delay(15000);
+                // ★ [NEW] 메인 루프 동적 쿨타임 처리
+                const errMsg = apiError.message || "";
+                console.log(`  -> 🚨 에러 원인: ${errMsg.substring(0, 120).replace(/\n/g, ' ')}...`); 
+                
+                let waitTime = 15000; 
+                const match = errMsg.match(/retry in (\d+(?:\.\d+)?)s/i);
+                if (match) {
+                    waitTime = (Math.ceil(parseFloat(match[1])) + 2) * 1000; 
+                    console.log(`  -> ⏱️ 구글 서버 지시 수신: ${waitTime/1000}초 절대 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
+                } else {
+                    console.log(`  -> ⚠️ 기본 15초 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
+                }
+                await delay(waitTime);
             }
         }
 
@@ -333,7 +339,17 @@ ${currentMermaid}
                                 qaResultText = res.response.text();
                                 break;
                             } catch(qaErr) {
-                                await delay(15000);
+                                // ★ [NEW] QA 루프 동적 쿨타임 처리
+                                const errMsg = qaErr.message || "";
+                                let waitTime = 15000;
+                                const match = errMsg.match(/retry in (\d+(?:\.\d+)?)s/i);
+                                if (match) {
+                                    waitTime = (Math.ceil(parseFloat(match[1])) + 2) * 1000;
+                                    console.log(`  -> ⏱️ [QA] 구글 서버 지시 수신: ${waitTime/1000}초 냉각...`);
+                                } else {
+                                    console.log(`  -> ⚠️ [QA] 기본 15초 냉각 진입...`);
+                                }
+                                await delay(waitTime);
                             }
                         }
                         
