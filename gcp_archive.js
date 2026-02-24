@@ -188,10 +188,10 @@ async function main() {
 본문 작성 전 최상단에 반드시 다음 3줄을 작성하십시오.
 메인장르: (반드시 다음 10개 중 하나만 선택: RPG, MMORPG, 방치형, SLG/전략, 캐주얼/퍼즐, 액션/슈팅, SNG/시뮬레이션, 스포츠/레이싱, 카지노/보드, 기타)
 서브장르: (15자 이내 자유 형식)
-시스템: (15자 이내 명사형)
+시스템: (15자 이내 명사형, 파일명에 사용될 핵심 시스템명)
 
-# Step 1: 핵심 콘텐츠 시스템 특정 및 교차 검증
-1. 2026년 오늘 날짜를 기준으로 검색하여, 타겟 게임의 매출을 지탱하는 가장 핵심적인 '시스템 1개'를 특정하십시오.
+# Step 1: 핵심 콘텐츠 시스템 특정 및 분석
+1. 2026년 오늘 날짜를 기준으로 검색하여, 타겟 게임의 매출과 리텐션을 지탱하는 가장 핵심적인 '시스템 1개'를 특정하십시오.
 
 # Step 2: 실무형 역기획서 작성 (Strict Format)
 아래 8단계 구조에 맞춰 마크다운 형식으로 작성하십시오.
@@ -205,7 +205,7 @@ async function main() {
 08. 벤치마킹 인사이트 및 개발 코스트 추정
 
 # Output Constraints (절대 수정 금지)
-* [사고 과정 노출 금지]: 파이썬 코드 실행 결과나 내부 검색/분석 과정은 절대로 텍스트로 노출하지 마십시오.
+* [사고 과정 노출 금지]: 파이썬 코드 실행 결과나 내부 검색/분석 과정은 절대로 텍스트로 노출하지 마십시오. 처음부터 끝까지 생략 없이 단 한 번만 출력하십시오.
 * [페르소나 전환]: 다이어그램(Mermaid) 코드를 작성할 때만큼은 '수석 기획자'가 아니라 '감정과 의도가 거세된 엄격한 컴파일러 기계'로 빙의하십시오.
 * [매우 중요] 화살표 텍스트(\`-->|텍스트|\`)는 반드시 **단답형 키워드(10자 이내)**로만 작성하십시오. 문장형 작성은 문법을 파괴하므로 절대 금지합니다.
 * 다이어그램 노드 ID(대괄호 앞의 식별자)는 무조건 **알파벳 대문자(A, B, C...)**만 사용. 텍스트 내부에 큰따옴표나 작은따옴표 절대로 사용 금지. 화살표 끝에 콜론(:) 사용 금지.
@@ -259,7 +259,6 @@ async function main() {
 `;
         reportText = cleanHeader + reportText;
 
-        // ★ [가장 중요한 노션의 AI 교정 루프 이식]
         const mermaidRegex = /```mermaid\s*([\s\S]*?)```/gi;
         let mdText = "";  
         let pdfText = ""; 
@@ -272,7 +271,7 @@ async function main() {
             pdfText += preText;
 
             let originalMermaid = match[1];
-            let finalFixedMermaid = originalMermaid; // 교정이 끝난 최종본을 담을 변수
+            let finalFixedMermaid = originalMermaid; 
             
             let fastTrackCode = sanitizeMermaid(originalMermaid);
             const fastUrl = getKrokiUrl(fastTrackCode);
@@ -282,12 +281,12 @@ async function main() {
                 const fastSvg = await fastRes.text();
                 
                 if (fastRes.ok && !fastSvg.includes('Syntax error') && !fastSvg.includes('SyntaxError') && !fastSvg.includes('Error 400')) {
-                    console.log(`  -> ⚡ [Fast-Track 성공] AI 재호출 없이 정규식만으로 완벽 교정 완료!`);
-                    finalFixedMermaid = fastTrackCode; // 1차 통과 완료
+                    console.log(`  -> ⚡ [Fast-Track 성공] 정규식만으로 완벽 교정 완료!`);
+                    finalFixedMermaid = fastTrackCode; 
                 } else {
-                    console.log(`  -> ⚠️ [Fast-Track 실패] 복합 에러 감지. AI 딥러닝 교정 루프 진입...`);
+                    console.log(`  -> ⚠️ [Fast-Track 실패] AI 딥러닝 교정 루프 진입...`);
                     
-                    const MAX_QA_RETRIES = 2; // 최대 2번 더 AI에게 기회를 줍니다.
+                    const MAX_QA_RETRIES = 2; 
                     let currentMermaid = originalMermaid;
                     let qaSuccess = false;
 
@@ -319,7 +318,7 @@ ${currentMermaid}
 
                         try {
                             let aiFixedCode = qaResultText.replace(/```mermaid\s*/ig, '').replace(/```/g, '').trim();
-                            let doubleCheckedCode = sanitizeMermaid(aiFixedCode); // AI가 짠 걸 한 번 더 수술대에 올림
+                            let doubleCheckedCode = sanitizeMermaid(aiFixedCode); 
                             
                             const testUrl = getKrokiUrl(doubleCheckedCode);
                             const testResponse = await fetch(testUrl);
@@ -327,9 +326,9 @@ ${currentMermaid}
 
                             if (testResponse.ok && !testSvgText.includes('Syntax error') && !testSvgText.includes('SyntaxError') && !testSvgText.includes('Error 400')) {
                                 console.log(`  -> [시도 ${attempt}/${MAX_QA_RETRIES}] AI 딥러닝 렌더링 성공!`);
-                                finalFixedMermaid = doubleCheckedCode; // 최종 교정 완료
+                                finalFixedMermaid = doubleCheckedCode; 
                                 qaSuccess = true;
-                                await delay(15000); // 쿨타임
+                                await delay(15000); 
                                 break; 
                             } else {
                                 console.log(`  -> [시도 ${attempt}/${MAX_QA_RETRIES}] 렌더링 실패. AI에게 코드를 다시 반려합니다.`);
@@ -343,15 +342,14 @@ ${currentMermaid}
                     if (!qaSuccess) {
                         console.log(`  -> 🚨 [최후 방어선] 2번의 AI 교정으로도 복구 불가능한 외계어 감지.`);
                         isMermaidBroken = true;
-                        break; // 루프 탈출
+                        break; 
                     }
                 }
 
-                // 모든 교정 루프를 무사히 통과했다면 MD와 PDF에 각각 적재합니다.
                 if (!isMermaidBroken) {
-                    mdText += "```mermaid\n" + finalFixedMermaid + "\n```"; // MD는 순수 코드 보존
+                    mdText += "```mermaid\n" + finalFixedMermaid + "\n```"; 
                     const finalRenderUrl = getKrokiUrl(finalFixedMermaid);
-                    pdfText += `\n\n![시스템 다이어그램](${finalRenderUrl})\n\n`; // PDF는 이미지 삽입
+                    pdfText += `\n\n![시스템 다이어그램](${finalRenderUrl})\n\n`; 
                 }
 
             } catch (e) {
@@ -375,7 +373,6 @@ ${currentMermaid}
         const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
         try {
-          // [1] 마크다운(.md) 파일 저장 
           const mdStream = new stream.PassThrough();
           mdStream.end(Buffer.from(mdText, 'utf8')); 
           await drive.files.create({
@@ -384,18 +381,33 @@ ${currentMermaid}
           });
           console.log(`  -> 💾 [MD] 저장 완료: ${mdFolderName}/${baseFileName}.md`);
 
-          // [2] PDF(.pdf) 파일 변환 및 저장
           console.log(`  -> 📄 [PDF] 변환 시작... (약 5초 소요)`);
           const pdfData = await mdToPdf({ content: pdfText }, {
-              launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+              launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
               css: `
-                  body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.6; color: #333; }
-                  h1, h2, h3 { color: #111; margin-top: 24px; border-bottom: 1px solid #eaeaea; padding-bottom: 8px;}
-                  img { max-width: 100%; height: auto; display: block; margin: 20px auto; }
-                  table { border-collapse: collapse; width: 100%; margin: 20px 0; font-size: 0.9em; }
-                  th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                  body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.6; color: #333; padding: 20px; }
+                  h1 { color: #111; font-size: 2em; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #eaeaea; }
+                  h2 { color: #222; font-size: 1.4em; margin-top: 2em; margin-bottom: 0.5em; border-bottom: 1px solid #eaeaea; padding-bottom: 5px; }
+                  h3 { color: #333; font-size: 1.2em; margin-top: 1.5em; }
+                  blockquote { border-left: 4px solid #d3d3d3; padding-left: 14px; color: #555; background-color: #f9f9f9; padding: 12px; border-radius: 4px; margin: 15px 0; }
+                  table { border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+                  th, td { border: 1px solid #ddd; padding: 12px 15px; text-align: left; }
                   th { background-color: #f4f4f4; color: #333; font-weight: bold; }
-                  code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; }
+                  pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 15px 0; }
+                  code { font-family: monospace; font-size: 0.9em; color: #d63384; background-color: #f9f9f9; padding: 2px 5px; border-radius: 3px;}
+                  hr { border: none; border-top: 1px solid #ddd; margin: 30px 0; }
+                  
+                  /* ★ 핵심: 다이어그램(이미지) 크기를 아담하게 제어하고 텍스트 연결 유지 */
+                  img { 
+                      display: block; 
+                      margin: 20px auto; 
+                      max-width: 75%; /* 가로 크기를 A4 용지의 75% 수준으로 제한 */
+                      max-height: 350px; /* 세로 크기가 350px을 넘지 않도록 제한 */
+                      width: auto; 
+                      height: auto; 
+                      page-break-inside: avoid; /* 이미지가 페이지 경계에서 반토막 나지 않게만 방어 */
+                      break-inside: avoid;
+                  }
               `,
               pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
           });
