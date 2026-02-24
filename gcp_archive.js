@@ -14,7 +14,7 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 100; // ★ 현재 데모 시연을 위해 3개로 세팅되어 있습니다.
+const BATCH_SIZE = 100; // ★ 매일 100개 풀가동 모드 확정
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -176,7 +176,6 @@ async function main() {
 
         console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
 
-        // ★ 프롬프트: Step 1 고유명사 타겟팅 로직 100% 반영 완료
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -219,7 +218,7 @@ async function main() {
         
         for (let initAttempt = 1; initAttempt <= MAX_RETRIES; initAttempt++) {
             try {
-                await delay(5000); // ★ 5초 절대 냉각 (429 에러 원천 차단)
+                await delay(5000); // ★ 5초 절대 냉각 (429 에러 방어선)
                 const draftResult = await model.generateContent(prompt);
                 reportText = draftResult.response.text();
                 draftSuccess = true;
@@ -370,8 +369,16 @@ ${currentMermaid}
         const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
         const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
+        // ==========================================
+        // ★ [파일 3종 독립 검증 및 저장 로직] ★
+        // ==========================================
+        let mdSaved = false;
+        let pdfSaved = false;
+        let htmlSaved = false;
+
+        // [1] 마크다운(.md) 독립 검증 및 저장
         try {
-          // [1] 마크다운(.md) 저장
+          if (!mdText || mdText.length < 10) throw new Error("MD 데이터가 비어있습니다.");
           const mdStream = new stream.PassThrough();
           mdStream.end(Buffer.from(mdText, 'utf8')); 
           await drive.files.create({
@@ -379,8 +386,11 @@ ${currentMermaid}
             media: { mimeType: 'text/markdown', body: mdStream }
           });
           console.log(`  -> 💾 [MD] 저장 완료`);
+          mdSaved = true;
+        } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
 
-          // ★ [2] PDF 변환 (모던 UI CSS 업데이트)
+        // [2] PDF 독립 검증 및 저장
+        try {
           console.log(`  -> 📄 [PDF] 변환 시작...`);
           const pdfData = await mdToPdf({ content: pdfText }, {
               launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
@@ -401,6 +411,9 @@ ${currentMermaid}
               `,
               pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
           });
+          
+          if (!pdfData || !pdfData.content) throw new Error("PDF 변환 엔진이 빈 데이터를 반환했습니다.");
+          
           const pdfStream = new stream.PassThrough();
           pdfStream.end(pdfData.content);
           await drive.files.create({
@@ -408,10 +421,15 @@ ${currentMermaid}
             media: { mimeType: 'application/pdf', body: pdfStream }
           });
           console.log(`  -> 💾 [PDF] 저장 완료`);
+          pdfSaved = true;
+        } catch (e) { console.error(`  -> ❌ [PDF] 변환/저장 실패: ${e.message}`); }
 
-          // ★ [3] HTML 변환 (실리콘밸리 SaaS 대시보드 카드 UI 스타일)
+        // [3] HTML 독립 검증 및 저장
+        try {
           console.log(`  -> 🌐 [HTML] 변환 시작...`);
           const parsedHtmlBody = marked.parse(pdfText); 
+          if (!parsedHtmlBody || parsedHtmlBody.trim() === "") throw new Error("HTML 파싱 결과가 비어있습니다.");
+
           const fullHtml = `
 <!DOCTYPE html>
 <html lang="ko">
@@ -421,29 +439,9 @@ ${currentMermaid}
     <title>${luckyGame.title} 역기획서</title>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        :root {
-            --primary: #4F46E5; 
-            --bg: #F3F4F6;
-            --card-bg: #FFFFFF;
-            --text-main: #1F2937;
-            --border: #E5E7EB;
-        }
-        body { 
-            font-family: 'Pretendard', -apple-system, sans-serif; 
-            background-color: var(--bg); 
-            color: var(--text-main); 
-            line-height: 1.75; 
-            margin: 0; 
-            padding: 40px 20px; 
-        }
-        .report-container { 
-            max-width: 900px; 
-            margin: 0 auto; 
-            background: var(--card-bg); 
-            padding: 50px 70px; 
-            border-radius: 24px; 
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); 
-        }
+        :root { --primary: #4F46E5; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; --border: #E5E7EB; }
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: var(--bg); color: var(--text-main); line-height: 1.75; margin: 0; padding: 40px 20px; }
+        .report-container { max-width: 900px; margin: 0 auto; background: var(--card-bg); padding: 50px 70px; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); }
         h1 { font-size: 2.4em; font-weight: 800; color: #111827; border-bottom: 4px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; letter-spacing: -0.02em; }
         h2 { font-size: 1.6em; font-weight: 700; color: var(--primary); margin-top: 2.5em; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         h3 { font-size: 1.3em; font-weight: 600; color: #374151; margin-top: 1.8em; }
@@ -457,14 +455,7 @@ ${currentMermaid}
         pre code { background: transparent; color: inherit; padding: 0; }
         img { display: block; margin: 40px auto; max-width: 90%; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         hr { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
-        
-        /* 모바일 최적화 */
-        @media (max-width: 768px) {
-            body { padding: 15px 10px; }
-            .report-container { padding: 30px 20px; border-radius: 16px; }
-            h1 { font-size: 1.8em; }
-            h2 { font-size: 1.4em; }
-        }
+        @media (max-width: 768px) { body { padding: 15px 10px; } .report-container { padding: 30px 20px; border-radius: 16px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
     </style>
 </head>
 <body>
@@ -481,12 +472,19 @@ ${currentMermaid}
             media: { mimeType: 'text/html', body: htmlStream }
           });
           console.log(`  -> 💾 [HTML] 저장 완료`);
+          htmlSaved = true;
+        } catch (e) { console.error(`  -> ❌ [HTML] 변환/저장 실패: ${e.message}`); }
 
-          successCount++;
-          
-        } catch (e) { 
-            console.error(`  -> ❌ 파일 저장 중 에러 발생: ${e.message}`); 
+        // [최종 결산] 3개 중 하나라도 저장되었다면 부분 성공으로 간주
+        if (mdSaved && pdfSaved && htmlSaved) {
+            successCount++;
+        } else if (mdSaved || pdfSaved || htmlSaved) {
+            console.log(`  -> ⚠️ 일부 포맷 저장 실패 (MD:${mdSaved}, PDF:${pdfSaved}, HTML:${htmlSaved})`);
+            successCount++; // 부분 성공도 카운트
+        } else {
+            console.error(`  -> ❌ 모든 포맷 저장 실패`);
         }
+        // ==========================================
 
         if (idx < targetGames.length - 1) await delay(30000); 
       }
@@ -494,8 +492,8 @@ ${currentMermaid}
       console.log(`\n======================================================`);
       console.log(`[${dateString}] 📊 최종 결산 리포트`);
       console.log(`- 목표 처리량: ${targetGames.length}개`);
-      console.log(`- 적재 성공량 (MD+PDF+HTML 세트): ${successCount}개`);
-      console.log(`- 불량 폐기량: ${targetGames.length - successCount}개`);
+      console.log(`- 적재 성공량 (MD/PDF/HTML 중 1개 이상 생존): ${successCount}개`);
+      console.log(`- 완전 폐기량: ${targetGames.length - successCount}개`);
       console.log(`🎉 구글 드라이브 동기화 작업이 모두 종료되었습니다.`);
       console.log(`======================================================\n`);
     }
