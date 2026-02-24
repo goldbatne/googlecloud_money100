@@ -15,8 +15,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+      # ★ PDF 변환 엔진(md-to-pdf) 설치 명령어 추가
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install md-to-pdf
       - name: Run GCP Archive Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
