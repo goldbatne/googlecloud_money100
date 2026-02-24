@@ -14,7 +14,7 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 3; // ★ 매일 100개 풀가동 모드
+const BATCH_SIZE = 100; // ★ 매일 100개 풀가동 모드 확정
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -174,7 +174,6 @@ async function main() {
         const genAI = new GoogleGenerativeAI(currentKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        // ★ [NEW] 5대 기획 카테고리 룰렛 로직 추가
         const categories = [
             "핵심 BM (가챠/강화/패스 등 직접적 매출원)",
             "장기 리텐션 (일일 숙제/업적/마일리지 등 접속 유지 장치)",
@@ -187,7 +186,6 @@ async function main() {
         console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
         console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}]`);
 
-        // ★ 프롬프트: 룰렛에서 뽑힌 카테고리 주입 및 고유명사 타겟팅 강제
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -264,7 +262,6 @@ async function main() {
                                .replace(/서브장르:.*?\n/g, '')
                                .replace(/시스템:.*?\n/g, '').trim();
 
-        // 제목에도 어떤 카테고리가 뽑혔는지 명시하여 문서의 가독성을 높임
         const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 역기획서
 > **분석 타겟:** ${randomCategory}
@@ -384,9 +381,6 @@ ${currentMermaid}
         const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
         const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
-        // ==========================================
-        // ★ [파일 3종 독립 검증 및 저장 로직] ★
-        // ==========================================
         let mdSaved = false;
         let pdfSaved = false;
         let htmlSaved = false;
@@ -406,6 +400,7 @@ ${currentMermaid}
         try {
           console.log(`  -> 📄 [PDF] 변환 시작...`);
           const pdfData = await mdToPdf({ content: pdfText }, {
+              timeout: 120000, // ★ 추가: Puppeteer 렌더링 타임아웃을 30초에서 120초로 대폭 연장
               launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
               css: `
                   body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.7; color: #1F2937; padding: 20px; }
@@ -495,7 +490,6 @@ ${currentMermaid}
         } else {
             console.error(`  -> ❌ 모든 포맷 저장 실패`);
         }
-        // ==========================================
 
         if (idx < targetGames.length - 1) await delay(30000); 
       }
