@@ -3,6 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const stream = require('stream');
 const zlib = require('zlib');
 const { mdToPdf } = require('md-to-pdf'); 
+const { marked } = require('marked'); // ★ HTML 변환용 라이브러리 추가
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCP_CLIENT_ID,
@@ -13,7 +14,7 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 5; 
+const BATCH_SIZE = 5; // 100개 풀가동
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -150,6 +151,7 @@ async function main() {
 
     const mdFolderName = `${dayStr}_md`;
     const pdfFolderName = `${dayStr}_pdf`;
+    const htmlFolderName = `${dayStr}_html`; // ★ HTML 폴더 추가
 
     let successCount = 0;
 
@@ -159,13 +161,11 @@ async function main() {
       
       const mdFolderId = await getOrCreateFolder(mdFolderName, monthId);
       const pdfFolderId = await getOrCreateFolder(pdfFolderName, monthId);
+      const htmlFolderId = await getOrCreateFolder(htmlFolderName, monthId); // ★ HTML 폴더 생성
 
       const targetGames = [...allGames].sort(() => 0.5 - Math.random()).slice(0, BATCH_SIZE);
       
       console.log(`\n[${dateString}] 🗄️ 멀티 API 코어 적재 엔진 가동 (가용 키: ${apiKeys.length}개)`);
-      console.log(`📂 MD 저장 경로: ${yearStr}/${monthStr}/${mdFolderName}`);
-      console.log(`📂 PDF 저장 경로: ${yearStr}/${monthStr}/${pdfFolderName}`);
-
       for (let idx = 0; idx < targetGames.length; idx++) {
         const luckyGame = targetGames[idx];
         const luckyRank = luckyGame.actualRank; 
@@ -285,7 +285,6 @@ async function main() {
                     finalFixedMermaid = fastTrackCode; 
                 } else {
                     console.log(`  -> ⚠️ [Fast-Track 실패] AI 딥러닝 교정 루프 진입...`);
-                    
                     const MAX_QA_RETRIES = 2; 
                     let currentMermaid = originalMermaid;
                     let qaSuccess = false;
@@ -319,7 +318,6 @@ ${currentMermaid}
                         try {
                             let aiFixedCode = qaResultText.replace(/```mermaid\s*/ig, '').replace(/```/g, '').trim();
                             let doubleCheckedCode = sanitizeMermaid(aiFixedCode); 
-                            
                             const testUrl = getKrokiUrl(doubleCheckedCode);
                             const testResponse = await fetch(testUrl);
                             const testSvgText = await testResponse.text();
@@ -335,10 +333,8 @@ ${currentMermaid}
                                 currentMermaid = doubleCheckedCode; 
                             }
                         } catch(qaError) { console.warn("QA 에러 발생, 재시도..."); }
-                        
                         await delay(15000); 
                     }
-                    
                     if (!qaSuccess) {
                         console.log(`  -> 🚨 [최후 방어선] 2번의 AI 교정으로도 복구 불가능한 외계어 감지.`);
                         isMermaidBroken = true;
@@ -367,12 +363,13 @@ ${currentMermaid}
 
         const remainingText = reportText.substring(lastIndex);
         mdText += remainingText;
-        pdfText += remainingText;
+        pdfText += remainingText; // 이 안에는 웹에서 바로 보이는 이미지 링크가 박혀있음
 
         const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
         const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
         try {
+          // [1] 마크다운(.md) 파일 저장
           const mdStream = new stream.PassThrough();
           mdStream.end(Buffer.from(mdText, 'utf8')); 
           await drive.files.create({
@@ -381,6 +378,7 @@ ${currentMermaid}
           });
           console.log(`  -> 💾 [MD] 저장 완료: ${mdFolderName}/${baseFileName}.md`);
 
+          // [2] PDF(.pdf) 파일 변환 및 저장
           console.log(`  -> 📄 [PDF] 변환 시작... (약 5초 소요)`);
           const pdfData = await mdToPdf({ content: pdfText }, {
               launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
@@ -396,22 +394,10 @@ ${currentMermaid}
                   pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 15px 0; }
                   code { font-family: monospace; font-size: 0.9em; color: #d63384; background-color: #f9f9f9; padding: 2px 5px; border-radius: 3px;}
                   hr { border: none; border-top: 1px solid #ddd; margin: 30px 0; }
-                  
-                  /* ★ 핵심: 다이어그램(이미지) 크기를 아담하게 제어하고 텍스트 연결 유지 */
-                  img { 
-                      display: block; 
-                      margin: 20px auto; 
-                      max-width: 75%; /* 가로 크기를 A4 용지의 75% 수준으로 제한 */
-                      max-height: 350px; /* 세로 크기가 350px을 넘지 않도록 제한 */
-                      width: auto; 
-                      height: auto; 
-                      page-break-inside: avoid; /* 이미지가 페이지 경계에서 반토막 나지 않게만 방어 */
-                      break-inside: avoid;
-                  }
+                  img { display: block; margin: 20px auto; max-width: 75%; max-height: 350px; width: auto; height: auto; page-break-inside: avoid; break-inside: avoid; }
               `,
               pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
           });
-
           const pdfStream = new stream.PassThrough();
           pdfStream.end(pdfData.content);
           await drive.files.create({
@@ -419,6 +405,46 @@ ${currentMermaid}
             media: { mimeType: 'application/pdf', body: pdfStream }
           });
           console.log(`  -> 💾 [PDF] 저장 완료: ${pdfFolderName}/${baseFileName}.pdf`);
+
+          // ★ [3] HTML(.html) 파일 변환 및 저장 (NEW!)
+          console.log(`  -> 🌐 [HTML] 변환 시작...`);
+          // marked 라이브러리로 pdfText(마크다운+이미지링크)를 HTML 태그로 파싱
+          const parsedHtmlBody = marked.parse(pdfText); 
+          // PDF와 동일한 노션 스타일 CSS를 입혀서 완전한 HTML 웹문서로 조립
+          const fullHtml = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${luckyGame.title} 역기획서</title>
+    <style>
+        body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        h1 { color: #111; font-size: 2em; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #eaeaea; }
+        h2 { color: #222; font-size: 1.4em; margin-top: 2em; margin-bottom: 0.5em; border-bottom: 1px solid #eaeaea; padding-bottom: 5px; }
+        h3 { color: #333; font-size: 1.2em; margin-top: 1.5em; }
+        blockquote { border-left: 4px solid #d3d3d3; padding-left: 14px; color: #555; background-color: #f9f9f9; padding: 12px; border-radius: 4px; margin: 15px 0; }
+        table { border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 12px 15px; text-align: left; }
+        th { background-color: #f4f4f4; color: #333; font-weight: bold; }
+        pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 15px 0; }
+        code { font-family: monospace; font-size: 0.9em; color: #d63384; background-color: #f9f9f9; padding: 2px 5px; border-radius: 3px;}
+        hr { border: none; border-top: 1px solid #ddd; margin: 30px 0; }
+        img { display: block; margin: 30px auto; max-width: 90%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    ${parsedHtmlBody}
+</body>
+</html>`;
+          
+          const htmlStream = new stream.PassThrough();
+          htmlStream.end(Buffer.from(fullHtml, 'utf8'));
+          await drive.files.create({
+            requestBody: { name: `${baseFileName}.html`, parents: [htmlFolderId] },
+            media: { mimeType: 'text/html', body: htmlStream }
+          });
+          console.log(`  -> 💾 [HTML] 저장 완료: ${htmlFolderName}/${baseFileName}.html`);
 
           successCount++;
           
@@ -432,7 +458,7 @@ ${currentMermaid}
       console.log(`\n======================================================`);
       console.log(`[${dateString}] 📊 최종 결산 리포트`);
       console.log(`- 목표 처리량: ${targetGames.length}개`);
-      console.log(`- 적재 성공량 (MD+PDF 세트): ${successCount}개`);
+      console.log(`- 적재 성공량 (MD+PDF+HTML 세트): ${successCount}개`);
       console.log(`- 불량 폐기량: ${targetGames.length - successCount}개`);
       console.log(`🎉 구글 드라이브 동기화 작업이 모두 종료되었습니다.`);
       console.log(`======================================================\n`);
