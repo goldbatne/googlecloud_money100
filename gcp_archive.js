@@ -153,24 +153,24 @@ async function main() {
 
     if (allGames.length > 0) {
       
-      // ★ [NEW] 대표님 기획 100% 반영: 4-Depth 폴더 하이라키 구축
-      // Depth 1: 루트 폴더 안에 '2026년' 폴더 생성
+      // ★ [NEW] 모든 뎁스에 포맷 꼬리표(_md, _pdf, _html) 강제 부착
+      // Depth 1
       const mainYearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
       
-      // Depth 2: '2026년' 폴더 안에 포맷별 폴더(2026년_md 등) 생성
+      // Depth 2
       const mdFormatId = await getOrCreateFolder(`${yearStr}_md`, mainYearId);
       const pdfFormatId = await getOrCreateFolder(`${yearStr}_pdf`, mainYearId);
       const htmlFormatId = await getOrCreateFolder(`${yearStr}_html`, mainYearId);
 
-      // Depth 3: 포맷별 폴더 안에 '월(02월)' 폴더 생성
-      const mdMonthId = await getOrCreateFolder(monthStr, mdFormatId);
-      const pdfMonthId = await getOrCreateFolder(monthStr, pdfFormatId);
-      const htmlMonthId = await getOrCreateFolder(monthStr, htmlFormatId);
+      // Depth 3 (월 단위에도 포맷 부착)
+      const mdMonthId = await getOrCreateFolder(`${monthStr}_md`, mdFormatId);
+      const pdfMonthId = await getOrCreateFolder(`${monthStr}_pdf`, pdfFormatId);
+      const htmlMonthId = await getOrCreateFolder(`${monthStr}_html`, htmlFormatId);
 
-      // Depth 4: 월 폴더 안에 '일(25일)' 최종 목적지 폴더 생성
-      const mdFolderId = await getOrCreateFolder(dayStr, mdMonthId);
-      const pdfFolderId = await getOrCreateFolder(dayStr, pdfMonthId);
-      const htmlFolderId = await getOrCreateFolder(dayStr, htmlMonthId);
+      // Depth 4 (일 단위에도 포맷 부착 - 최종 목적지)
+      const mdFolderId = await getOrCreateFolder(`${dayStr}_md`, mdMonthId);
+      const pdfFolderId = await getOrCreateFolder(`${dayStr}_pdf`, pdfMonthId);
+      const htmlFolderId = await getOrCreateFolder(`${dayStr}_html`, htmlMonthId);
 
       const targetGames = [...allGames].sort(() => 0.5 - Math.random()).slice(0, BATCH_SIZE);
       
@@ -399,7 +399,7 @@ ${currentMermaid}
           const mdStream = new stream.PassThrough();
           mdStream.end(Buffer.from(mdText, 'utf8')); 
           await drive.files.create({
-            requestBody: { name: `${baseFileName}.md`, parents: [mdFolderId] }, // ★ 최종 폴더인 25일에 저장
+            requestBody: { name: `${baseFileName}.md`, parents: [mdFolderId] }, 
             media: { mimeType: 'text/markdown', body: mdStream }
           });
           console.log(`  -> 💾 [MD] 저장 완료`);
@@ -434,7 +434,7 @@ ${currentMermaid}
           const pdfStream = new stream.PassThrough();
           pdfStream.end(pdfData.content);
           await drive.files.create({
-            requestBody: { name: `${baseFileName}.pdf`, parents: [pdfFolderId] }, // ★ 최종 폴더인 25일에 저장
+            requestBody: { name: `${baseFileName}.pdf`, parents: [pdfFolderId] }, 
             media: { mimeType: 'application/pdf', body: pdfStream }
           });
           console.log(`  -> 💾 [PDF] 저장 완료`);
@@ -484,7 +484,7 @@ ${currentMermaid}
           const htmlStream = new stream.PassThrough();
           htmlStream.end(Buffer.from(fullHtml, 'utf8'));
           await drive.files.create({
-            requestBody: { name: `${baseFileName}.html`, parents: [htmlFolderId] }, // ★ 최종 폴더인 25일에 저장
+            requestBody: { name: `${baseFileName}.html`, parents: [htmlFolderId] }, 
             media: { mimeType: 'text/html', body: htmlStream }
           });
           console.log(`  -> 💾 [HTML] 저장 완료`);
