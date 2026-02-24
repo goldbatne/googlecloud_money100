@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const stream = require('stream');
 const zlib = require('zlib');
-const { mdToPdf } = require('md-to-pdf'); // ★ PDF 라이브러리 탑재
+const { mdToPdf } = require('md-to-pdf'); 
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCP_CLIENT_ID,
@@ -13,8 +13,8 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-const BATCH_SIZE = 50; // 50개 가동 유지
-const MAX_RETRIES = 3; // 503 에러 방어용 재시도 횟수
+const BATCH_SIZE = 50; 
+const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -41,7 +41,6 @@ function getKrokiUrl(text) {
   return `https://kroki.io/mermaid/svg/${base64}`;
 }
 
-// 무결점 토크나이저 수술대
 function sanitizeMermaid(rawCode) {
   let fixed = rawCode.replace(/\/\/.*$/gm, '').replace(/%%.*$/gm, '').trim();
   fixed = fixed.replace(/["'*#]/g, ''); 
@@ -147,19 +146,27 @@ async function main() {
     const dateString = now.toISOString().split('T')[0];
     const yearStr = String(now.getFullYear());
     const monthStr = String(now.getMonth() + 1).padStart(2, '0') + "월";
+    
+    // ★ [폴더명 분리]
     const dayStr = String(now.getDate()).padStart(2, '0') + "일";
+    const mdFolderName = `${dayStr}_md`;
+    const pdfFolderName = `${dayStr}_pdf`;
 
     let successCount = 0;
 
     if (allGames.length > 0) {
+      // ★ [트리 생성: 년 -> 월 -> (md폴더 / pdf폴더)]
       const yearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
       const monthId = await getOrCreateFolder(monthStr, yearId);
-      const targetFolderId = await getOrCreateFolder(dayStr, monthId);
+      
+      const mdFolderId = await getOrCreateFolder(mdFolderName, monthId);
+      const pdfFolderId = await getOrCreateFolder(pdfFolderName, monthId);
 
       const targetGames = [...allGames].sort(() => 0.5 - Math.random()).slice(0, BATCH_SIZE);
       
       console.log(`\n[${dateString}] 🗄️ 멀티 API 코어 적재 엔진 가동 (가용 키: ${apiKeys.length}개)`);
-      console.log(`📂 저장 경로: ${yearStr}/${monthStr}/${dayStr}`);
+      console.log(`📂 MD 저장 경로: ${yearStr}/${monthStr}/${mdFolderName}`);
+      console.log(`📂 PDF 저장 경로: ${yearStr}/${monthStr}/${pdfFolderName}`);
 
       for (let idx = 0; idx < targetGames.length; idx++) {
         const luckyGame = targetGames[idx];
@@ -251,7 +258,6 @@ async function main() {
         let lastIndex = 0;
         let isMermaidBroken = false; 
         
-        // ★ MD와 PDF 모두에서 다이어그램이 보이도록 텍스트 자체를 이미지 링크로 치환
         for (const match of [...reportText.matchAll(mermaidRegex)]) {
             newReportText += reportText.substring(lastIndex, match.index);
             let fastTrackCode = sanitizeMermaid(match[1]);
@@ -300,19 +306,19 @@ async function main() {
         const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
         try {
-          // [1] 마크다운(.md) 파일 저장
+          // ★ [1] 마크다운(.md) 파일 저장 -> mdFolderId로 전송
           const mdStream = new stream.PassThrough();
           mdStream.end(Buffer.from(reportText, 'utf8'));
           await drive.files.create({
-            requestBody: { name: `${baseFileName}.md`, parents: [targetFolderId] },
+            requestBody: { name: `${baseFileName}.md`, parents: [mdFolderId] },
             media: { mimeType: 'text/markdown', body: mdStream }
           });
-          console.log(`  -> 💾 [MD] 저장 완료`);
+          console.log(`  -> 💾 [MD] 저장 완료: ${mdFolderName}/${baseFileName}.md`);
 
-          // [2] PDF(.pdf) 파일 변환 및 저장
+          // ★ [2] PDF(.pdf) 파일 변환 및 저장 -> pdfFolderId로 전송
           console.log(`  -> 📄 [PDF] 변환 시작... (약 5초 소요)`);
           const pdfData = await mdToPdf({ content: reportText }, {
-              launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }, // 깃허브 액션 리눅스 권한 에러 방어
+              launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
               css: `
                   @import url('[https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap](https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap)');
                   body { font-family: 'Noto Sans KR', sans-serif; line-height: 1.6; color: #333; }
@@ -329,12 +335,11 @@ async function main() {
           const pdfStream = new stream.PassThrough();
           pdfStream.end(pdfData.content);
           await drive.files.create({
-            requestBody: { name: `${baseFileName}.pdf`, parents: [targetFolderId] },
+            requestBody: { name: `${baseFileName}.pdf`, parents: [pdfFolderId] },
             media: { mimeType: 'application/pdf', body: pdfStream }
           });
-          console.log(`  -> 💾 [PDF] 저장 완료: ${baseFileName}.pdf`);
+          console.log(`  -> 💾 [PDF] 저장 완료: ${pdfFolderName}/${baseFileName}.pdf`);
 
-          // MD와 PDF 모두 정상 저장 시에만 카운트 증가
           successCount++;
           
         } catch (e) { 
