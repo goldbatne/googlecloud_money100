@@ -483,7 +483,7 @@ ${currentMermaid}
             console.error(`  -> ❌ 파일 저장 중 에러 발생: ${e.message}`); 
         }
 
-        if (idx < targetGames.length - 1) await delay(60000); 
+        if (idx < targetGames.length - 1) await delay(30000); 
       }
       
       console.log(`\n======================================================`);
