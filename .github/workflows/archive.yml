@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
@@ -20,14 +21,15 @@ jobs:
         
       - name: Install dependencies
         run: |
-          npm install googleapis @google/generative-ai
-          npm install md-to-pdf marked
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
           
       - name: Run GCP Archive Script (Rank 1~50)
         env:
           START_RANK: 1
           END_RANK: 50
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ★ Top 50 전용 API 키 풀 (5개)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TOP }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
@@ -38,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
@@ -48,19 +51,20 @@ jobs:
         
       - name: Install dependencies
         run: |
-          npm install googleapis @google/generative-ai
-          npm install md-to-pdf marked
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
 
       - name: Avoid Folder Creation Race Condition
         run: |
-          echo "Top 50 서버가 폴더를 먼저 생성하도록 300초 대기합니다..."
-          sleep 300
+          echo "Top 50 서버가 드라이브에 오늘 날짜 폴더를 안전하게 먼저 생성하도록 60초 대기합니다..."
+          sleep 60
           
       - name: Run GCP Archive Script (Rank 51~100)
         env:
           START_RANK: 51
           END_RANK: 100
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ★ Bottom 50 전용 API 키 풀 (5개)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_BOTTOM }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
