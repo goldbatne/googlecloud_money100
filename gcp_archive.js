@@ -14,8 +14,10 @@ oauth2Client.setCredentials({ refresh_token: process.env.GCP_REFRESH_TOKEN });
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 const ROOT_FOLDER_ID = process.env.GDRIVE_FOLDER_ID;
-// ★ 대표님 지시에 따라 리미터 해제: Top 100 전체 스캔
-const BATCH_SIZE = 100; 
+
+// ★ [NEW] 랜덤 BATCH_SIZE 삭제 -> 환경변수로 시작/종료 순위 통제 (기본값 1~50)
+const START_RANK = parseInt(process.env.START_RANK || '1', 10); 
+const END_RANK = parseInt(process.env.END_RANK || '50', 10);
 const MAX_RETRIES = 3; 
 
 const apiKeys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -168,9 +170,10 @@ async function main() {
       const pdfFolderId = await getOrCreateFolder(`${dayStr}_pdf`, pdfMonthId);
       const htmlFolderId = await getOrCreateFolder(`${dayStr}_html`, htmlMonthId);
 
-      const targetGames = [...allGames].sort(() => 0.5 - Math.random()).slice(0, BATCH_SIZE);
+      // ★ [NEW] 랜덤 추출 폐기 -> 할당된 순위(START~END)만큼만 정확히 자르기
+      const targetGames = allGames.slice(START_RANK - 1, END_RANK);
       
-      console.log(`\n[${dateString}] 🗄️ 멀티 API 코어 적재 엔진 가동 (가용 키: ${apiKeys.length}개)`);
+      console.log(`\n[${dateString}] 🗄️ 멀티 API 코어 병렬 엔진 가동 (${START_RANK}위 ~ ${END_RANK}위)`);
       for (let idx = 0; idx < targetGames.length; idx++) {
         const luckyGame = targetGames[idx];
         const luckyRank = luckyGame.actualRank; 
@@ -197,10 +200,9 @@ async function main() {
         ];
         const randomCategory = categories[Math.floor(Math.random() * categories.length)];
 
-        console.log(`\n[${idx + 1}/${BATCH_SIZE}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
+        console.log(`\n[진행률: ${idx + 1}/${targetGames.length}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
         console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}]`);
 
-        // ★ [NEW] 대표님 지시 반영: 다각도 레퍼런스 및 공식 링크 교차 검증 강제
         const prompt = `
 # Base Persona & Tone
 - 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
@@ -443,13 +445,12 @@ ${currentMermaid}
                   h2 { font-size: 1.5em; font-weight: 700; color: #4F46E5; margin-top: 2.2em; border-bottom: 1px solid #E5E7EB; padding-bottom: 8px; }
                   h3 { font-size: 1.25em; font-weight: 600; color: #374151; margin-top: 1.5em; }
                   blockquote { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 15px 20px; border-radius: 0 8px 8px 0; color: #4338CA; margin: 20px 0; font-weight: 500; font-size: 0.95em; }
-                  table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 30px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-                  th { background-color: #F9FAFB; padding: 16px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); color: #374151; }
-                  td { padding: 16px; border-bottom: 1px solid var(--border); }
-                  tr:last-child td { border-bottom: none; }
-                  pre { background: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; overflow-x: auto; margin: 20px 0; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.06); }
-                  code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: #DB2777; background-color: #F9FAFB; padding: 2px 5px; border-radius: 4px; }
-                  pre code { background: transparent; color: inherit; padding: 0; }
+                  table { width: 100%; border-collapse: collapse; margin: 25px 0; font-size: 0.95em; border-radius: 8px; overflow: hidden; }
+                  th, td { border: 1px solid #E5E7EB; padding: 12px 15px; text-align: left; }
+                  th { background-color: #F9FAFB; font-weight: 600; color: #111827; }
+                  pre { background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 15px 0; overflow-x: auto; }
+                  code { font-family: monospace; font-size: 0.9em; color: #DB2777; background-color: #F9FAFB; padding: 2px 5px; border-radius: 4px; }
+                  pre code { background-color: transparent; color: inherit; padding: 0; }
                   hr { border: 0; height: 1px; background: #E5E7EB; margin: 30px 0; }
                   img { display: block; margin: 30px auto; max-width: 80%; max-height: 400px; width: auto; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
                   @media (max-width: 768px) { body { padding: 15px 10px; } .report-container { padding: 30px 20px; border-radius: 16px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
