@@ -6,7 +6,7 @@ on:
   workflow_dispatch: 
 
 jobs:
-  build:
+  scrape_top_50:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -19,13 +19,47 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
         
       - name: Install dependencies
-        # ★ [핵심] 마크다운을 HTML로 바꿔줄 marked 라이브러리 추가 설치
         run: |
-          npm install
+          npm install googleapis @google/generative-ai
           npm install md-to-pdf marked
           
-      - name: Run GCP Archive Script
+      - name: Run GCP Archive Script (Rank 1~50)
         env:
+          START_RANK: 1
+          END_RANK: 50
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_bottom_50:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+        
+      - name: Install dependencies
+        run: |
+          npm install googleapis @google/generative-ai
+          npm install md-to-pdf marked
+
+      - name: Avoid Folder Creation Race Condition
+        run: |
+          echo "Top 50 서버가 폴더를 먼저 생성하도록 300초 대기합니다..."
+          sleep 300
+          
+      - name: Run GCP Archive Script (Rank 51~100)
+        env:
+          START_RANK: 51
+          END_RANK: 100
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
