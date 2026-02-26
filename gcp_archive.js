@@ -156,12 +156,15 @@ async function main() {
         if (allGames.length > 0) {
             const mainYearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
             
+            const mdFormatId = await getOrCreateFolder(`${yearStr}_md`, mainYearId);
             const pdfFormatId = await getOrCreateFolder(`${yearStr}_pdf`, mainYearId);
             const htmlFormatId = await getOrCreateFolder(`${yearStr}_html`, mainYearId);
 
+            const mdMonthId = await getOrCreateFolder(`${monthStr}_md`, mdFormatId);
             const pdfMonthId = await getOrCreateFolder(`${monthStr}_pdf`, pdfFormatId);
             const htmlMonthId = await getOrCreateFolder(`${monthStr}_html`, htmlFormatId);
 
+            const mdFolderId = await getOrCreateFolder(`${dayStr}_md`, mdMonthId);
             const pdfFolderId = await getOrCreateFolder(`${dayStr}_pdf`, pdfMonthId);
             const htmlFolderId = await getOrCreateFolder(`${dayStr}_html`, htmlMonthId);
 
@@ -172,6 +175,7 @@ async function main() {
                 const luckyGame = targetGames[idx];
                 const luckyRank = luckyGame.actualRank; 
                 
+                // ★ [NEW] 출시일(Release Date) 핀포인트 추출 로직
                 let releaseDate = "정보 없음";
                 try {
                     const appDetails = await gplay.app({ appId: luckyGame.appId });
@@ -183,6 +187,7 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
+                // ★ [NEW] Google Search 도구(Grounding) 장착: 환각 억제율 극대화
                 const model = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
                     tools: [{ googleSearch: {} }] 
@@ -207,6 +212,7 @@ async function main() {
                 const randomCategory = categories[Math.floor(Math.random() * categories.length)];
 
                 console.log(`\n[진행률: ${idx + 1}/${targetGames.length}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
+                console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}] / 출시일: ${releaseDate}`);
 
                 const prompt = `
 # Base Persona & Tone
@@ -249,7 +255,7 @@ async function main() {
 * 다이어그램 노드 ID(대괄호 앞의 식별자)는 무조건 **알파벳 대문자(A, B, C...)**만 사용.
 * ERD 테이블 이름 대괄호/따옴표/띄어쓰기 금지. ERD 속성 작성 시 코멘트를 쓰지 말고 줄바꿈으로 구분하십시오.
 `;
-                
+        
                 let reportText = "";
                 let draftSuccess = false;
                 
@@ -268,6 +274,9 @@ async function main() {
                         const match = errMsg.match(/retry in (\d+(?:\.\d+)?)s/i);
                         if (match) {
                             waitTime = (Math.ceil(parseFloat(match[1])) + 2) * 1000; 
+                            console.log(`  -> ⏱️ 구글 서버 지시 수신: ${waitTime/1000}초 절대 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
+                        } else {
+                            console.log(`  -> ⚠️ 기본 15초 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
                         }
                         await delay(waitTime);
                     }
@@ -294,6 +303,7 @@ async function main() {
                                        .replace(/서브장르:.*?\n/g, '')
                                        .replace(/시스템:.*?\n/g, '').trim();
 
+                // ★ [NEW] 헤더에 메타데이터(작성일, 출시일) 주입 완료
                 const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 분석 문서
 > **분석 타겟:** ${randomCategory}
@@ -308,12 +318,14 @@ async function main() {
                 reportText = cleanHeader + reportText;
 
                 const mermaidRegex = /```mermaid\s*([\s\S]*?)```/gi;
+                let mdText = "";  
                 let pdfText = ""; 
                 let lastIndex = 0;
                 let isMermaidBroken = false; 
                 
                 for (const match of [...reportText.matchAll(mermaidRegex)]) {
                     const preText = reportText.substring(lastIndex, match.index);
+                    mdText += preText;
                     pdfText += preText;
 
                     let originalMermaid = match[1];
@@ -330,7 +342,7 @@ async function main() {
                             console.log(`  -> ⚡ [Fast-Track 성공] 정규식 완벽 교정 완료!`);
                             finalFixedMermaid = fastTrackCode; 
                         } else {
-                            console.log(`  -> ⚠️ [Fast-Track 실패] AI 교정 루프 진입...`);
+                            console.log(`  -> ⚠️ [Fast-Track 실패] AI 딥러닝 교정 루프 진입...`);
                             const MAX_QA_RETRIES = 5; 
                             let currentMermaid = originalMermaid;
                             let qaSuccess = false;
@@ -360,6 +372,9 @@ ${currentMermaid}
                                         const match = errMsg.match(/retry in (\d+(?:\.\d+)?)s/i);
                                         if (match) {
                                             waitTime = (Math.ceil(parseFloat(match[1])) + 2) * 1000;
+                                            console.log(`  -> ⏱️ [QA] 구글 서버 지시 수신: ${waitTime/1000}초 냉각...`);
+                                        } else {
+                                            console.log(`  -> ⚠️ [QA] 기본 15초 냉각 진입...`);
                                         }
                                         await delay(waitTime);
                                     }
@@ -394,6 +409,7 @@ ${currentMermaid}
                         }
 
                         if (!isMermaidBroken) {
+                            mdText += "```mermaid\n" + finalFixedMermaid + "\n```"; 
                             const finalRenderUrl = getKrokiUrl(finalFixedMermaid);
                             pdfText += `\n\n![시스템 다이어그램](${finalRenderUrl})\n\n`; 
                         }
@@ -411,13 +427,27 @@ ${currentMermaid}
                 }
 
                 const remainingText = reportText.substring(lastIndex);
+                mdText += remainingText;
                 pdfText += remainingText;
 
                 const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
                 const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
+                let mdSaved = false;
                 let pdfSaved = false;
                 let htmlSaved = false;
+
+                try {
+                  if (!mdText || mdText.length < 10) throw new Error("MD 데이터가 비어있습니다.");
+                  const mdStream = new stream.PassThrough();
+                  mdStream.end(Buffer.from(mdText, 'utf8')); 
+                  await drive.files.create({
+                    requestBody: { name: `${baseFileName}.md`, parents: [mdFolderId] }, 
+                    media: { mimeType: 'text/markdown', body: mdStream }
+                  });
+                  console.log(`  -> 💾 [MD] 저장 완료`);
+                  mdSaved = true;
+                } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
 
                 try {
                   console.log(`  -> 📄 [PDF] 변환 시작...`);
@@ -505,10 +535,10 @@ ${currentMermaid}
                   htmlSaved = true;
                 } catch (e) { console.error(`  -> ❌ [HTML] 변환/저장 실패: ${e.message}`); }
 
-                if (pdfSaved && htmlSaved) {
+                if (mdSaved && pdfSaved && htmlSaved) {
                     successCount++;
-                } else if (pdfSaved || htmlSaved) {
-                    console.log(`  -> ⚠️ 일부 포맷 저장 실패 (PDF:${pdfSaved}, HTML:${htmlSaved})`);
+                } else if (mdSaved || pdfSaved || htmlSaved) {
+                    console.log(`  -> ⚠️ 일부 포맷 저장 실패 (MD:${mdSaved}, PDF:${pdfSaved}, HTML:${htmlSaved})`);
                     successCount++; 
                 } else {
                     console.error(`  -> ❌ 모든 포맷 저장 실패`);
@@ -520,7 +550,7 @@ ${currentMermaid}
             console.log(`\n======================================================`);
             console.log(`[${dateString}] 📊 최종 결산 리포트`);
             console.log(`- 목표 처리량: ${targetGames.length}개`);
-            console.log(`- 적재 성공량 (PDF/HTML 중 1개 이상 생존): ${successCount}개`);
+            console.log(`- 적재 성공량 (MD/PDF/HTML 중 1개 이상 생존): ${successCount}개`);
             console.log(`- 완전 폐기량: ${targetGames.length - successCount}개`);
             console.log(`🎉 구글 드라이브 동기화 작업이 모두 종료되었습니다.`);
             console.log(`======================================================\n`);
