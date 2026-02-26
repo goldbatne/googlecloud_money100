@@ -156,7 +156,6 @@ async function main() {
         if (allGames.length > 0) {
             const mainYearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
             
-            // ★ MD 폴더 생성 로직 삭제됨
             const pdfFormatId = await getOrCreateFolder(`${yearStr}_pdf`, mainYearId);
             const htmlFormatId = await getOrCreateFolder(`${yearStr}_html`, mainYearId);
 
@@ -168,7 +167,7 @@ async function main() {
 
             const targetGames = allGames.slice(START_RANK - 1, END_RANK);
             
-            console.log(`\n[${dateString}] 🗄️ 검색 탑재형 코어 병렬 엔진 가동 (${START_RANK}위 ~ ${END_RANK}위) [PDF/HTML 전용 테스트 모드]`);
+            console.log(`\n[${dateString}] 🗄️ 검색 탑재형 코어 병렬 엔진 가동 (${START_RANK}위 ~ ${END_RANK}위)`);
             for (let idx = 0; idx < targetGames.length; idx++) {
                 const luckyGame = targetGames[idx];
                 const luckyRank = luckyGame.actualRank; 
@@ -269,9 +268,6 @@ async function main() {
                         const match = errMsg.match(/retry in (\d+(?:\.\d+)?)s/i);
                         if (match) {
                             waitTime = (Math.ceil(parseFloat(match[1])) + 2) * 1000; 
-                            console.log(`  -> ⏱️ 구글 서버 지시 수신: ${waitTime/1000}초 절대 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
-                        } else {
-                            console.log(`  -> ⚠️ 기본 15초 냉각 진입 (${initAttempt}/${MAX_RETRIES})...`);
                         }
                         await delay(waitTime);
                     }
@@ -312,7 +308,7 @@ async function main() {
                 reportText = cleanHeader + reportText;
 
                 const mermaidRegex = /```mermaid\s*([\s\S]*?)```/gi;
-                let pdfText = ""; // ★ mdText 변수 완전 삭제
+                let pdfText = ""; 
                 let lastIndex = 0;
                 let isMermaidBroken = false; 
                 
@@ -509,7 +505,6 @@ ${currentMermaid}
                   htmlSaved = true;
                 } catch (e) { console.error(`  -> ❌ [HTML] 변환/저장 실패: ${e.message}`); }
 
-                // ★ mdSaved 조건 완벽히 삭제됨
                 if (pdfSaved && htmlSaved) {
                     successCount++;
                 } else if (pdfSaved || htmlSaved) {
