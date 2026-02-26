@@ -25,14 +25,14 @@ jobs:
         run: npm install googleapis
 
       # [Step 1] 메인 사본 (MD/PDF/HTML 전체 미러링)
-      - name: Run Main Copy Script
-        env:
-          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
-          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
-          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }} 
-        run: node copy.js
+#      - name: Run Main Copy Script
+#        env:
+#          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+#          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+#          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+#          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+#          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }} 
+#        run: node copy.js
 
       # [Step 2] 대외 쇼룸 (PDF/HTML 전용, 26일_pdf 포맷 구조)
       - name: Run Public Showroom Script
@@ -45,13 +45,13 @@ jobs:
         run: node copy_public.js
 
       # [Step 3] 로컬 AI 작업장 (MD 전용)
-      - name: Run AI Workspace Script
-        env:
-          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
-          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
-          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          AI_WORKSPACE_FOLDER_ID: ${{ secrets.AI_WORKSPACE_FOLDER_ID }} 
-        run: node copy_ai.js
+#      - name: Run AI Workspace Script
+#        env:
+#          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+#          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+#          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+#          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+#          AI_WORKSPACE_FOLDER_ID: ${{ secrets.AI_WORKSPACE_FOLDER_ID }} 
+#        run: node copy_ai.js
 
       
