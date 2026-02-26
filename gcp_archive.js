@@ -170,12 +170,11 @@ async function main() {
 
             const targetGames = allGames.slice(START_RANK - 1, END_RANK);
             
-            console.log(`\n[${dateString}] 🗄️ 검색 탑재형 코어 병렬 엔진 가동 (${START_RANK}위 ~ ${END_RANK}위)`);
+            console.log(`\n[${dateString}] 🗄️ 검색 탑재형 코어 병렬 엔진 가동 (${START_RANK}위 ~ ${END_RANK}위) [MD 생략 테스트 모드]`);
             for (let idx = 0; idx < targetGames.length; idx++) {
                 const luckyGame = targetGames[idx];
                 const luckyRank = luckyGame.actualRank; 
                 
-                // ★ [NEW] 출시일(Release Date) 핀포인트 추출 로직
                 let releaseDate = "정보 없음";
                 try {
                     const appDetails = await gplay.app({ appId: luckyGame.appId });
@@ -187,7 +186,6 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
-                // ★ [NEW] Google Search 도구(Grounding) 장착: 환각 억제율 극대화
                 const model = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
                     tools: [{ googleSearch: {} }] 
@@ -255,7 +253,7 @@ async function main() {
 * 다이어그램 노드 ID(대괄호 앞의 식별자)는 무조건 **알파벳 대문자(A, B, C...)**만 사용.
 * ERD 테이블 이름 대괄호/따옴표/띄어쓰기 금지. ERD 속성 작성 시 코멘트를 쓰지 말고 줄바꿈으로 구분하십시오.
 `;
-        
+                
                 let reportText = "";
                 let draftSuccess = false;
                 
@@ -303,7 +301,6 @@ async function main() {
                                        .replace(/서브장르:.*?\n/g, '')
                                        .replace(/시스템:.*?\n/g, '').trim();
 
-                // ★ [NEW] 헤더에 메타데이터(작성일, 출시일) 주입 완료
                 const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 분석 문서
 > **분석 타겟:** ${randomCategory}
@@ -433,10 +430,15 @@ ${currentMermaid}
                 const safeTitle = luckyGame.title.replace(/[/\\?%*:|"<>]/g, '_');
                 const baseFileName = `[${dateString}]_${String(luckyRank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
-                let mdSaved = false;
+                let mdSaved = true; // ★ [테스트용 강제 True] MD 저장 단계를 바이패스합니다.
                 let pdfSaved = false;
                 let htmlSaved = false;
 
+                // ==============================================================
+                // ★ [테스트 모드] MD 구글 드라이브 업로드 로직 완전 주석 처리
+                // ==============================================================
+                console.log(`  -> 🛑 [MD] 테스트 모드: 드라이브 업로드를 생략합니다.`);
+                /*
                 try {
                   if (!mdText || mdText.length < 10) throw new Error("MD 데이터가 비어있습니다.");
                   const mdStream = new stream.PassThrough();
@@ -448,6 +450,8 @@ ${currentMermaid}
                   console.log(`  -> 💾 [MD] 저장 완료`);
                   mdSaved = true;
                 } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
+                */
+                // ==============================================================
 
                 try {
                   console.log(`  -> 📄 [PDF] 변환 시작...`);
