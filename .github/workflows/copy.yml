@@ -1,17 +1,15 @@
 name: Drive Backup Copier
 
-# 메인 크롤링 작업이 성공적으로 완료되었을 때만 자동으로 트리거됨
 on:
   workflow_run:
-    workflows: ["GCP Data Lake Archive"] # ★ 주의: 기존 메인 yml 파일의 'name' 속성과 정확히 일치해야 합니다!
+    workflows: ["GCP Data Lake Archive"] 
     types:
       - completed
-  workflow_dispatch: # 수동 실행 버튼 활성화
+  workflow_dispatch: 
 
 jobs:
   copy_files:
     runs-on: ubuntu-latest
-    # 메인 작업이 '성공'했을 때만 실행되도록 조건 추가
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     
     steps:
@@ -26,22 +24,34 @@ jobs:
       - name: Install dependencies
         run: npm install googleapis
 
-      # [Step 1] 인간용 메인 백업 (기존 유지)
-      - name: Run Copy Script
+      # [Step 1] 메인 사본 (MD/PDF/HTML 전체 미러링)
+      - name: Run Main Copy Script
         env:
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }} # 원본 타겟
-          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }} # 사본 타겟
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }} 
         run: node copy.js
 
-      # [Step 2] AI 전용 샌드박스 백업 (새로 추가된 직렬 파이프라인)
-      - name: Run AI Workspace Copy Script
+      # [Step 2] 대외 쇼룸 (PDF/HTML 전용, 26일_pdf 포맷 구조)
+      - name: Run Public Showroom Script
         env:
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }} # 원본에서 읽어옴
-          AI_WORKSPACE_FOLDER_ID: ${{ secrets.AI_WORKSPACE_FOLDER_ID }} # 평면 타겟 (신규 시크릿)
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          PUBLIC_GDRIVE_FOLDER_ID: ${{ secrets.PUBLIC_GDRIVE_FOLDER_ID }} # ★ 변수명 교체 완료
+        run: node copy_public.js
+
+      # [Step 3] 로컬 AI 작업장 (MD 전용)
+      - name: Run AI Workspace Script
+        env:
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          AI_WORKSPACE_FOLDER_ID: ${{ secrets.AI_WORKSPACE_FOLDER_ID }} 
         run: node copy_ai.js
+
+      
