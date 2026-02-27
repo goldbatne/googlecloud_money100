@@ -45,7 +45,9 @@ function getKrokiUrl(text) {
 }
 
 function sanitizeMermaid(rawCode) {
-    let fixed = rawCode.replace(/\/\/.*$/gm, '').replace(/%%.*$/gm, '').trim();
+    // ★ [진화 3] 눈에 보이지 않는 공백(ZWSP) 및 제어 문자 원천 학살
+    let fixed = rawCode.replace(/[\u200B-\u200D\uFEFF]/g, ''); 
+    fixed = fixed.replace(/\/\/.*$/gm, '').replace(/%%.*$/gm, '').trim();
     fixed = fixed.replace(/["'*#]/g, ''); 
     fixed = fixed.replace(/^\s*(\d+\.|[-*])\s+/gm, ''); 
 
@@ -152,6 +154,7 @@ async function main() {
         const dayStr = String(now.getDate()).padStart(2, '0') + "일"; 
 
         let successCount = 0;
+        let skippedCount = 0;
 
         if (allGames.length > 0) {
             const mainYearId = await getOrCreateFolder(yearStr, ROOT_FOLDER_ID);
@@ -175,7 +178,6 @@ async function main() {
                 const luckyGame = targetGames[idx];
                 const luckyRank = luckyGame.actualRank; 
                 
-                // ★ [NEW] 출시일(Release Date) 핀포인트 추출 로직
                 let releaseDate = "정보 없음";
                 try {
                     const appDetails = await gplay.app({ appId: luckyGame.appId });
@@ -187,10 +189,18 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
-                // ★ [NEW] Google Search 도구(Grounding) 장착: 환각 억제율 극대화
-                const model = genAI.getGenerativeModel({ 
+                // ★ [진화 1] 에이전트 뇌의 물리적 분리 (True Multi-Agent)
+                // [Agent 1] 수석 기획자 모델 (검색 툴 O, 기획 페르소나 주입)
+                const draftModel = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
-                    tools: [{ googleSearch: {} }] 
+                    tools: [{ googleSearch: {} }],
+                    systemInstruction: "당신은 15년 차 수석 게임 시스템 기획자입니다. 빈말이나 과도한 칭찬을 배제하고 사실 기반으로만 작성하십시오. 데이터가 부족한 양산형 게임의 경우 억지로 지어내지 말고 오직 [ABORT_NO_DATA]만 출력하십시오."
+                });
+
+                // [Agent 2] 컴파일러 QA 모델 (검색 툴 X, 문법 교정 페르소나 주입)
+                const qaModel = genAI.getGenerativeModel({
+                    model: "gemini-2.5-flash",
+                    systemInstruction: "당신은 감정이 없는 '엄격한 다이어그램 컴파일러'입니다. 기획적 의도, 설명, 마크다운(```) 기호 없이 오직 완벽하게 동작하는 Mermaid 순수 코드만 반환하십시오."
                 });
 
                 const categories = [
@@ -215,29 +225,22 @@ async function main() {
                 console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}] / 출시일: ${releaseDate}`);
 
                 const prompt = `
-# Base Persona & Tone
-- 당신은 15년 차 수석 게임 시스템 기획자이자 실무 디렉터입니다. 기획은 정답 맞추기가 아니라 '문장으로 회사(자본)를 설득하는 영역'임을 완벽히 이해하고 있습니다.
-- 빈말이나 과한 칭찬, 단순 현상 나열을 엄격히 금지합니다.
-- **[핵심 지시사항]:** 대상 시스템을 분석하는 것에 그치지 말고, 이 시스템을 개선하기 위한 **다각도의 레퍼런스**를 반드시 찾아 제안하십시오. 
-- **[환각 방지 철칙]:** 당신에게는 구글 검색 권한이 부여되어 있습니다. 시스템 명칭이나 수치를 지어내지 말고, 반드시 검색을 통해 실제 커뮤니티나 패치노트의 팩트를 기반으로 작성하십시오.
-
 # Input
 * **타겟 게임:** [${luckyGame.developer}]의 ${luckyGame.title} (구글 매출 ${luckyRank}위)
 * **분석 타겟 영역:** ${randomCategory}
 
 # Step 0: 메타데이터 정의 (절대 수정 금지)
-본문 작성 전 최상단에 반드시 다음 3줄을 작성하십시오.
+최상단에 반드시 다음 3줄을 작성하십시오.
 메인장르: (반드시 다음 10개 중 하나만 선택: RPG, MMORPG, 방치형, SLG/전략, 캐주얼/퍼즐, 액션/슈팅, SNG/시뮬레이션, 스포츠/레이싱, 카지노/보드, 기타)
 서브장르: (15자 이내 자유 형식)
 시스템: (15자 이내 명사형, 파일명에 사용될 핵심 시스템명)
 
-# Step 1: 실제 게임 내 UI 표기 명칭 타겟팅 (가장 중요)
-1. 2026년 오늘 날짜를 기준으로, 타겟 게임에서 **[${randomCategory}]** 영역을 대표하는 시그니처 시스템 1개를 특정하십시오.
-2. '캐릭터 뽑기', '길드전' 같은 제너릭한 일반 명사나 마케팅용 보도자료 용어 사용을 엄격히 금지합니다.
-3. 반드시 유저가 게임 접속 후 **'실제 한국 서버 클라이언트 화면(UI)에서 직접 확인하고 클릭할 수 있는 버튼, 메뉴, 탭의 정확한 텍스트'**를 최우선으로 분석 대상으로 명시하십시오. 
+# Step 1: 실제 게임 내 UI 표기 명칭 타겟팅
+1. 타겟 게임에서 **[${randomCategory}]** 영역을 대표하는 시그니처 시스템 1개를 특정하십시오.
+2. 유저가 게임 내에서 직접 클릭할 수 있는 **'정확한 UI 텍스트(메뉴명)'**를 기준으로 분석하십시오.
 
 # Step 2: 실무형 분석 문서 작성 (Strict Format)
-아래 8단계 구조에 맞춰 마크다운 형식으로 작성하십시오. 가독성을 위해 04번과 07번 항목은 반드시 **표(Table)** 형식으로 정리하십시오.
+아래 9단계 구조에 맞춰 마크다운으로 작성하십시오. 04번, 07번 항목은 **표(Table)** 형식으로 정리하십시오.
 01. 시스템 정의 및 ROI
 02. 콘텐츠 코어 루프 (Mermaid \`graph LR\`)
 03. 유저 경험 플로우차트 (Mermaid \`flowchart TD\`)
@@ -245,15 +248,16 @@ async function main() {
 05. 상세 명세 및 동기 설계
 06. 확장형 데이터 테이블 (Mermaid \`erDiagram\`)
 07. 엣지 케이스 및 예외 처리 (★ 표 형식 강제)
-08. 레퍼런스 기반 다각도 개선 제안 (타 게임의 우수 시스템 교차 벤치마킹 필수)
+08. 레퍼런스 기반 다각도 개선 제안
+09. **참고 문헌 및 팩트 체크 출처** (★ 필수: 이 분석을 위해 구글 검색에서 참조한 실제 URL 웹 링크를 최소 2개 이상 리스트업 하십시오.)
+
+# ★ [진화 2] 검색 전략 강제 지시 (Grounding Targeting)
+* 구글 검색 시 반드시 **"{게임명} 공식 라운지", "{게임명} 업데이트 패치노트", "{게임명} 인벤"** 등의 키워드를 조합하여 실제 유저들이 체감하는 팩트를 찾으십시오. 
 
 # Output Constraints (절대 수정 금지)
-* [사고 과정 노출 금지]: 내부 검색/분석 과정은 절대로 텍스트로 노출하지 마십시오.
-* [페르소나 전환]: 다이어그램(Mermaid) 코드를 작성할 때만큼은 '수석 기획자'가 아니라 '엄격한 컴파일러 기계'로 빙의하십시오.
-* [매우 중요] 화살표 텍스트(\`-->|텍스트|\`)는 반드시 **단답형 키워드(10자 이내)**로만 작성하십시오.
-* [특수문자 금지] Mermaid 노드 텍스트 괄호 \`[]\`, \`()\`, \`{}\` 내부에 콜론(\`:\`), 세미콜론(\`;\`), 따옴표(\`"\`, \`'\`), 쉼표(\`,\`)를 **절대 사용하지 마십시오**.
-* 다이어그램 노드 ID(대괄호 앞의 식별자)는 무조건 **알파벳 대문자(A, B, C...)**만 사용.
-* ERD 테이블 이름 대괄호/따옴표/띄어쓰기 금지. ERD 속성 작성 시 코멘트를 쓰지 말고 줄바꿈으로 구분하십시오.
+* [사고 과정 노출 금지]: 내부 검색 과정은 텍스트로 노출하지 마십시오.
+* [Mermaid 규칙]: 화살표 텍스트(\`-->|텍스트|\`)는 10자 이내. 대괄호, 중괄호 안에 콜론(:), 따옴표("), 쉼표(,) 절대 금지.
+* [노드 ID 규칙]: Mermaid 다이어그램의 노드 ID는 반드시 띄어쓰기 없는 알파벳+숫자 조합(예: A1, B2)으로 작성.
 `;
         
                 let reportText = "";
@@ -262,7 +266,8 @@ async function main() {
                 for (let initAttempt = 1; initAttempt <= MAX_RETRIES; initAttempt++) {
                     try {
                         await delay(5000); 
-                        const draftResult = await model.generateContent(prompt);
+                        // ★ 분리된 Agent 1(기획자) 호출
+                        const draftResult = await draftModel.generateContent(prompt);
                         reportText = draftResult.response.text();
                         draftSuccess = true;
                         break;
@@ -287,6 +292,14 @@ async function main() {
                   continue; 
                 }
 
+                if (reportText.includes('[ABORT_NO_DATA]')) {
+                    console.log(`  -> ⏭️ [AUTO-SKIP] 데이터가 부족한 양산형/비주류 게임으로 판단되어 작성을 취소합니다.`);
+                    skippedCount++;
+                    continue;
+                }
+
+                reportText = reportText.replace(/^```(markdown|md)?/i, '').replace(/```$/i, '').trim();
+
                 let metaMatches = [...reportText.matchAll(/메인장르:/g)];
                 if (metaMatches.length > 1) {
                     let lastMetaIndex = metaMatches[metaMatches.length - 1].index;
@@ -303,7 +316,6 @@ async function main() {
                                        .replace(/서브장르:.*?\n/g, '')
                                        .replace(/시스템:.*?\n/g, '').trim();
 
-                // ★ [NEW] 헤더에 메타데이터(작성일, 출시일) 주입 완료
                 const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 분석 문서
 > **분석 타겟:** ${randomCategory}
@@ -342,19 +354,17 @@ async function main() {
                             console.log(`  -> ⚡ [Fast-Track 성공] 정규식 완벽 교정 완료!`);
                             finalFixedMermaid = fastTrackCode; 
                         } else {
-                            console.log(`  -> ⚠️ [Fast-Track 실패] AI 딥러닝 교정 루프 진입...`);
+                            console.log(`  -> ⚠️ [Fast-Track 실패] 분리된 QA 에이전트 호출...`);
                             const MAX_QA_RETRIES = 5; 
                             let currentMermaid = originalMermaid;
                             let qaSuccess = false;
 
                             for (let attempt = 1; attempt <= MAX_QA_RETRIES; attempt++) {
                                 const qaPrompt = `
-[페르소나 전환]: 당신은 감정이 없는 '엄격한 다이어그램 컴파일러'입니다. 기획적 의도나 주석은 모두 버리고 오직 완벽한 문법의 코드만 출력하십시오.
 ${attempt > 1 ? "\n**[경고] 이전 시도에서 파서 에러가 발생했습니다! 화살표 텍스트에 긴 문장을 쓰지 마십시오. 화살표 텍스트는 10자 이내로 짧게 쓰십시오.**\n" : ""}
 1. [ERD 규칙]: \`erDiagram\` 속성에 따옴표나 코멘트를 모두 지우고 '타입 이름'만 남기세요.
 2. [Flowchart 규칙]: 모든 \`subgraph\` 이름은 반드시 큰따옴표(\`""\`)로 감쌀 것.
-3. [노드 규칙]: 대괄호 \`[]\` 밖의 노드 ID는 반드시 알파벳으로 명시하십시오. (예: \`Node1[텍스트]\`)
-4. 마크다운(\`\`\`) 없이 순수 코드만 반환하십시오.
+3. [노드 규칙]: 대괄호 \`[]\` 밖의 노드 ID는 반드시 **띄어쓰기 없는 알파벳과 숫자 조합(예: A1, Node2)**으로만 작성하십시오.
 
 [원본 코드]:
 ${currentMermaid}
@@ -363,7 +373,8 @@ ${currentMermaid}
                                 for(let qaTry=1; qaTry<=3; qaTry++) {
                                     try {
                                         await delay(5000); 
-                                        let res = await model.generateContent(qaPrompt);
+                                        // ★ 분리된 Agent 2(컴파일러) 호출
+                                        let res = await qaModel.generateContent(qaPrompt);
                                         qaResultText = res.response.text();
                                         break;
                                     } catch(qaErr) {
@@ -390,7 +401,7 @@ ${currentMermaid}
                                     const testSvgText = await testResponse.text();
 
                                     if (testResponse.ok && !testSvgText.includes('Syntax error') && !testSvgText.includes('SyntaxError') && !testSvgText.includes('Error 400')) {
-                                        console.log(`  -> [시도 ${attempt}/${MAX_QA_RETRIES}] AI 딥러닝 렌더링 성공!`);
+                                        console.log(`  -> [시도 ${attempt}/${MAX_QA_RETRIES}] QA 에이전트 렌더링 복구 성공!`);
                                         finalFixedMermaid = doubleCheckedCode; 
                                         qaSuccess = true;
                                         await delay(15000); 
@@ -412,6 +423,9 @@ ${currentMermaid}
                             mdText += "```mermaid\n" + finalFixedMermaid + "\n```"; 
                             const finalRenderUrl = getKrokiUrl(finalFixedMermaid);
                             pdfText += `\n\n![시스템 다이어그램](${finalRenderUrl})\n\n`; 
+                        } else {
+                            mdText += "```mermaid\n" + finalFixedMermaid + "\n```"; 
+                            pdfText += `\n\n*(※ 다이어그램 구조 오류로 이미지 렌더링에 실패했습니다. 마크다운 원본을 참조하십시오.)*\n\n`;
                         }
 
                     } catch (e) {
@@ -419,11 +433,6 @@ ${currentMermaid}
                         break;
                     }
                     lastIndex = match.index + match[0].length;
-                }
-
-                if (isMermaidBroken) {
-                    if (idx < targetGames.length - 1) await delay(30000); 
-                    continue; 
                 }
 
                 const remainingText = reportText.substring(lastIndex);
@@ -498,7 +507,7 @@ ${currentMermaid}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${luckyGame.title} 분석 문서</title>
     <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        @import url('[https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css](https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css)');
         :root { --primary: #4F46E5; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; --border: #E5E7EB; }
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: var(--bg); color: var(--text-main); line-height: 1.75; margin: 0; padding: 40px 20px; }
         .report-container { max-width: 900px; margin: 0 auto; background: var(--card-bg); padding: 50px 70px; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); }
@@ -550,8 +559,9 @@ ${currentMermaid}
             console.log(`\n======================================================`);
             console.log(`[${dateString}] 📊 최종 결산 리포트`);
             console.log(`- 목표 처리량: ${targetGames.length}개`);
-            console.log(`- 적재 성공량 (MD/PDF/HTML 중 1개 이상 생존): ${successCount}개`);
-            console.log(`- 완전 폐기량: ${targetGames.length - successCount}개`);
+            console.log(`- 적재 성공량: ${successCount}개`);
+            console.log(`- 자동 스킵량 (양산형/비주류): ${skippedCount}개`);
+            console.log(`- 완전 에러 폐기량: ${targetGames.length - successCount - skippedCount}개`);
             console.log(`🎉 구글 드라이브 동기화 작업이 모두 종료되었습니다.`);
             console.log(`======================================================\n`);
         }
