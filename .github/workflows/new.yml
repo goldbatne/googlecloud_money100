@@ -27,7 +27,7 @@ jobs:
       - name: Run GCP Archive Script (Rank 1~50)
         env:
           START_RANK: 1
-          END_RANK: 5
+          END_RANK: 1
           # ★ Top 50 전용 API 키 풀 (5개)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_NEW }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
