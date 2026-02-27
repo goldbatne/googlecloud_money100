@@ -45,6 +45,7 @@ function getKrokiUrl(text) {
 }
 
 function sanitizeMermaid(rawCode) {
+    // 눈에 보이지 않는 공백(ZWSP) 및 제어 문자 원천 학살
     let fixed = rawCode.replace(/[\u200B-\u200D\uFEFF]/g, ''); 
     fixed = fixed.replace(/\/\/.*$/gm, '').replace(/%%.*$/gm, '').trim();
     fixed = fixed.replace(/["'*#]/g, ''); 
@@ -188,12 +189,14 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
+                // [Agent 1] 수석 기획자 모델 (검색 툴 O, 기획 페르소나 주입)
                 const draftModel = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
                     tools: [{ googleSearch: {} }],
                     systemInstruction: "당신은 15년 차 수석 게임 시스템 기획자입니다. 빈말이나 과도한 칭찬을 배제하고 사실 기반으로만 작성하십시오. 데이터가 부족한 양산형 게임의 경우 억지로 지어내지 말고 오직 [ABORT_NO_DATA]만 출력하십시오."
                 });
 
+                // [Agent 2] 컴파일러 QA 모델 (검색 툴 X, 문법 교정 페르소나 주입)
                 const qaModel = genAI.getGenerativeModel({
                     model: "gemini-2.5-flash",
                     systemInstruction: "당신은 감정이 없는 '엄격한 다이어그램 컴파일러'입니다. 기획적 의도, 설명, 마크다운(```) 기호 없이 오직 완벽하게 동작하는 Mermaid 순수 코드만 반환하십시오."
@@ -220,7 +223,6 @@ async function main() {
                 console.log(`\n[진행률: ${idx + 1}/${targetGames.length}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
                 console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}] / 출시일: ${releaseDate}`);
 
-                // ★ [최종 완성] 퍼블리셔-개발사 투트랙 식별 및 교차 검증 로직 탑재
                 const prompt = `
 # Input
 * **타겟 게임:** [${luckyGame.developer}]의 ${luckyGame.title} (구글 매출 ${luckyRank}위)
@@ -313,7 +315,6 @@ async function main() {
                     coreSystemName = systemMatch[1].replace(/\[\/META\]/gi, '').replace(/[/\\?%*:|"<>]/g, '_').trim();
                 }
 
-                // ★ [최종 진화] 파싱 블록: 실제 개발사 추출 로직 추가
                 let realDeveloper = luckyGame.developer; 
                 const devMatch = reportText.match(/실제개발사:\s*([^\n]+)/);
                 if (devMatch) {
@@ -325,7 +326,6 @@ async function main() {
                                        .replace(/시스템:.*?\n/g, '')
                                        .replace(/실제개발사:.*?\n/g, '').trim();
 
-                // ★ [최종 진화] 문서 헤더에 퍼블리셔와 실제 개발사 분리 표기
                 const cleanHeader = `
 # [${luckyRank}위] ${luckyGame.title} 분석 문서
 > **분석 타겟:** ${randomCategory}
@@ -468,26 +468,28 @@ ${currentMermaid}
                   mdSaved = true;
                 } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
 
+                // ★ [복구 완료] PDF 디자인 버그 해결 및 가독성 최적화
                 try {
                   console.log(`  -> 📄 [PDF] 변환 시작...`);
                   const pdfData = await mdToPdf({ content: pdfText }, {
                       timeout: 120000, 
                       launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
                       css: `
-                          body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.7; color: #1F2937; padding: 20px; }
-                          h1 { font-size: 2.2em; font-weight: 800; border-bottom: 3px solid #4F46E5; padding-bottom: 12px; margin-bottom: 25px; color: #111827; }
-                          h2 { font-size: 1.5em; font-weight: 700; color: #4F46E5; margin-top: 2.2em; border-bottom: 1px solid #E5E7EB; padding-bottom: 8px; }
-                          h3 { font-size: 1.25em; font-weight: 600; color: #374151; margin-top: 1.5em; }
-                          blockquote { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 15px 20px; border-radius: 0 8px 8px 0; color: #4338CA; margin: 20px 0; font-weight: 500; font-size: 0.95em; }
-                          table { width: 100%; border-collapse: collapse; margin: 25px 0; font-size: 0.95em; border-radius: 8px; overflow: hidden; }
+                          @import url('[https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css](https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css)');
+                          body { font-family: 'Pretendard', sans-serif; line-height: 1.7; color: #1F2937; padding: 20px; background-color: #ffffff; }
+                          h1 { font-size: 2.4em; font-weight: 800; border-bottom: 4px solid #4F46E5; padding-bottom: 12px; margin-bottom: 25px; color: #111827; }
+                          h2 { font-size: 1.6em; font-weight: 700; color: #4F46E5; margin-top: 2.2em; border-bottom: 1px solid #E5E7EB; padding-bottom: 8px; }
+                          h3 { font-size: 1.3em; font-weight: 600; color: #374151; margin-top: 1.5em; }
+                          blockquote { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 15px 20px; border-radius: 0 8px 8px 0; color: #4338CA; margin: 20px 0; font-weight: 500; font-size: 1.05em; }
+                          table { width: 100%; border-collapse: collapse; margin: 25px 0; font-size: 0.95em; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
                           th, td { border: 1px solid #E5E7EB; padding: 12px 15px; text-align: left; }
                           th { background-color: #F9FAFB; font-weight: 600; color: #111827; }
-                          pre { background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 15px 0; overflow-x: auto; }
-                          code { font-family: monospace; font-size: 0.9em; color: #DB2777; background-color: #F9FAFB; padding: 2px 5px; border-radius: 4px; }
+                          pre { background-color: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; margin: 20px 0; overflow-x: auto; }
+                          code { font-family: monospace; font-size: 0.9em; color: #E11D48; background-color: #F1F5F9; padding: 4px 8px; border-radius: 6px; }
                           pre code { background-color: transparent; color: inherit; padding: 0; }
                           hr { border: 0; height: 1px; background: #E5E7EB; margin: 30px 0; }
-                          img { display: block; margin: 30px auto; max-width: 80%; max-height: 400px; width: auto; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-                          @media (max-width: 768px) { body { padding: 15px 10px; } .report-container { padding: 30px 20px; border-radius: 16px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
+                          img { display: block; margin: 30px auto; max-width: 90%; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+                          @media (max-width: 768px) { body { padding: 15px 10px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
                       `,
                       pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
                   });
@@ -504,6 +506,7 @@ ${currentMermaid}
                   pdfSaved = true;
                 } catch (e) { console.error(`  -> ❌ [PDF] 변환/저장 실패: ${e.message}`); }
 
+                // ★ [복구 완료] HTML 폰트 로드 버그 해결 및 디자인 고도화
                 try {
                   console.log(`  -> 🌐 [HTML] 변환 시작...`);
                   const parsedHtmlBody = marked.parse(pdfText); 
@@ -530,7 +533,7 @@ ${currentMermaid}
         td { padding: 16px; border-bottom: 1px solid var(--border); }
         tr:last-child td { border-bottom: none; }
         pre { background: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; overflow-x: auto; margin: 20px 0; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.06); }
-        code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: #F1F5F9; color: #E11D48; padding: 4px 8px; border-radius: 6px; }
+        code { font-family: monospace; font-size: 0.9em; background: #F1F5F9; color: #E11D48; padding: 4px 8px; border-radius: 6px; }
         pre code { background: transparent; color: inherit; padding: 0; }
         img { display: block; margin: 40px auto; max-width: 90%; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         hr { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
