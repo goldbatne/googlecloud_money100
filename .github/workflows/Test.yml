@@ -1,0 +1,37 @@
+name: GCP Data Lake Archive test
+
+on:
+  schedule:
+    - cron: '17 15 * * *' 
+  workflow_dispatch: 
+
+jobs:
+  scrape_top_50:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+        
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+          
+      - name: Run GCP Archive Script (Rank 1~50)
+        env:
+          START_RANK: 1
+          END_RANK: 3
+          # ★ Top 50 전용 API 키 풀 (5개)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TOP }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js 
