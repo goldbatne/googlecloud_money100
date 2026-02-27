@@ -1,4 +1,4 @@
-name: GCP Data Lake Archive
+name: GCP Data Lake Archive NEW
 
 on:
   schedule:
