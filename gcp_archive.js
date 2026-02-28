@@ -189,10 +189,11 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
+                // ★ [진화] 에이전트 뇌(System Instruction) 튜닝: 검색망 확장 및 합리적 추정 허용
                 const draftModel = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
                     tools: [{ googleSearch: {} }],
-                    systemInstruction: "당신은 인간의 심리를 꿰뚫어 보는 15년 차 수석 게임 시스템 기획자이자 디렉터입니다. 단순 리뷰어의 감상평은 철저히 배제하되, 시스템 구조 이면에 숨겨진 '기획자의 의도(BM/리텐션)'와 '유저 심리 조종 로직(행동경제학, FOMO, 매몰비용 등)'을 날카롭게 해부하는 실무 역기획서를 작성하십시오. 데이터가 부족한 양산형 게임의 경우 억지로 지어내지 말고 오직 [ABORT_NO_DATA]만 출력하십시오."
+                    systemInstruction: "당신은 인간의 심리를 꿰뚫어 보는 15년 차 수석 게임 시스템 기획자이자 디렉터입니다. 타겟 게임의 내부 수치(공식)나 DB 구조는 외부에서 완벽히 알 수 없으므로, 게임의 UX와 BM을 바탕으로 한 당신의 '합리적 역기획(Educated Guess)'을 적극 허용합니다. 단, 시스템의 뼈대나 핵심 명칭 자체를 지어내는 것은 금지합니다. 1차 검색(레딧, 라운지)에서 정보가 안 나오면 포기하지 말고 검색 키워드를 바꿔가며 나무위키, Game8, 공식 패치노트 등을 끝까지 추적하는 딥 서치(Deep Search)를 수행하십시오. 도저히 시스템의 흔적조차 찾을 수 없을 때만 [ABORT_NO_DATA]를 출력하십시오."
                 });
 
                 const qaModel = genAI.getGenerativeModel({
@@ -221,7 +222,7 @@ async function main() {
                 console.log(`\n[진행률: ${idx + 1}/${targetGames.length}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
                 console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}] / 출시일: ${releaseDate}`);
 
-                // ★ [최종 진화] 엔드필드 역기획서 구조 완벽 이식 (8단계 하이브리드)
+                // ★ [진화] 프롬프트: 딥 서치 지시 + 합리적 추정(Educated Guess) 허용 문구 명시
                 const prompt = `
 # Input
 * **타겟 게임:** [${luckyGame.developer}]의 ${luckyGame.title} (구글 매출 ${luckyRank}위)
@@ -238,25 +239,26 @@ async function main() {
 2. 유저가 게임 내에서 직접 클릭할 수 있는 **'정확한 UI 텍스트(메뉴명)'**를 기준으로 분석하십시오.
 
 # Step 2: 실무형 시스템 역기획서 작성 (Endfield Reference Format)
-이 문서는 단순 리뷰가 아닌, 기획팀과 개발팀이 시스템을 완벽히 해부하고 기획 의도를 파악하기 위한 '역기획 및 심리 분석 명세서'입니다. 아래 8단계 구조에 맞춰 마크다운으로 차갑고 예리하게 작성하십시오. 05번, 06번 항목은 표(Table)를 적극 활용하십시오.
+이 문서는 기획팀과 개발팀이 타사 시스템을 해부하기 위해 읽는 '역기획 및 심리 분석 명세서'입니다. 
+아래 8단계 구조에 맞춰 마크다운으로 차갑고 예리하게 작성하십시오. (05, 06번 표 강제)
 
-01. **정의 및 기획 의도**: 시스템 개요와 기획자가 이 시스템을 도입한 핵심 의도(수익화, 리텐션, 트래픽 유도 등)를 명시
+01. **정의 및 기획 의도**: 시스템 개요와 기획자가 이 시스템을 도입한 핵심 의도(수익화, 리텐션, 트래픽 유도 등) 명시
 02. **시스템 구조도**: 핵심 서브시스템 간의 연결 관계 (Mermaid \`graph LR\`)
 03. **이용 플로우차트**: 유저의 핵심 이용 흐름 (Mermaid \`flowchart TD\`)
 04. **상세 명세 및 심리 설계**: 
-    - 시스템의 인터랙션 및 상태 전이 명세
-    - **[핵심]** 이 시스템이 유저의 어떤 심리적 트리거(FOMO, 매몰비용, 보상/도박 심리, 손실 회피 등)를 찌르기 위해 설계되었는지 기획자의 시선에서 해부
-05. **데이터 테이블 및 수치 밸런스**: 재화 Source/Sink 구조 파악, 추정 수치, 확장형 DB ERD (Mermaid \`erDiagram\`)
-06. **예외 처리 명세**: 엣지 케이스, 어뷰징 방지, 시스템 한계 도달 시 처리 방법 (★ 표 형식 강제)
+    - 인터랙션 및 상태 전이 명세
+    - **[핵심]** 이 시스템이 유저의 어떤 심리적 트리거(FOMO, 매몰비용, 보상/도박 심리, 손실 회피 등)를 찌르는지 기획자 관점에서 해부
+05. **데이터 테이블 및 수치 밸런스**: 재화 Source/Sink 구조 파악 및 추정 수치 (★ 합리적 추정(Educated Guess) 기반 작성 허용)
+06. **확장형 DB ERD 및 예외 처리**: 백엔드 DB 구조(합리적 추정 허용) 및 어뷰징 방지 예외 처리 (★ 표 형식 강제)
 07. **비교 분석 및 인사이트**: 유사 장르 탑 티어 게임과의 시스템 비교 매트릭스 및 실무적 개선 제안
 08. **참고 문헌 및 팩트 체크 출처**: (★ 필수: 이 분석을 위해 구글 검색에서 참조한 실제 URL 웹 링크 최소 2개)
 
-# ★ [핵심] 개발사-퍼블리셔 교차 검증 및 국가별 맞춤 검색 (Dynamic Grounding)
-1. **주체 식별**: 제공된 법인명([${luckyGame.developer}])은 구글플레이에 등록된 '퍼블리셔(Publisher)'입니다. 구글 검색을 통해 이 게임의 **'실제 원작 개발사(Developer)'**가 어디인지 파악하십시오.
-2. **투트랙(Two-Track) 검색**: 
-   - 퍼블리셔와 개발사가 다른 경우, **개발사 본진의 코어 로직 커뮤니티**와 **퍼블리셔가 주도하는 라이브 운영 지표(BM/패치노트)**를 모두 검색하여 교차 검증하십시오.
-   - 글로벌 게임은 "{게임명} Reddit", "{게임명} Fandom Wiki", 한국 내수 게임은 "{게임명} 공식 라운지/인벤" 등을 우선 타겟팅하십시오.
-3. (중요) 해외 영문, 중문, 일문 데이터를 참고하더라도 최종 출력은 **반드시 전문적인 한국어 게임 기획/서버 용어로 번역 및 정제하여 작성**하십시오.
+# ★ [핵심] 딥 서치(Deep Search) 및 글로벌 크로스 체킹 전략
+1. **주체 식별**: 제공된 법인명([${luckyGame.developer}])은 '퍼블리셔'입니다. 실제 '개발사'가 어디인지 파악하십시오.
+2. **심층 검색망 가동**: 
+   - 1차 검색(Reddit, Fandom Wiki, 한국 인벤/라운지)에서 정보가 부족할 경우 절대 포기하지 마십시오.
+   - 검색 키워드를 변경하여 **"나무위키(Namuwiki), 일본 게임에이트(Game8) 및 게임위드(Gamewith), 중국 NGA, 유튜브 패치노트 요약글"** 등 2차, 3차 심층 사이트를 끝까지 파헤쳐 팩트를 캐내십시오.
+3. (중요) 언어 장벽을 넘어 수집된 정보는 **반드시 전문적인 한국어 게임 기획/서버 용어로 번역 및 정제**하십시오.
 
 # Output Constraints (절대 수정 금지)
 * [사고 과정 노출 금지]: 내부 검색 과정은 텍스트로 노출하지 마십시오.
@@ -415,7 +417,7 @@ ${currentMermaid}
                                 await delay(15000); 
                             }
                             if (!qaSuccess) {
-                                console.log(`  -> 🚨 [최후 방어선] 외계어 감지. 해당 게임 분석을 스킵합니다.`);
+                                console.log(`  -> 🚨 [최후 방어선] 외계어 감지. 스킵합니다.`);
                                 isMermaidBroken = true;
                                 break; 
                             }
@@ -511,7 +513,7 @@ ${currentMermaid}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${luckyGame.title} 기획 제안서</title>
+    <title>${luckyGame.title} 역기획서</title>
     <style>
         @import url('[https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css](https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css)');
         :root { --primary: #4F46E5; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; --border: #E5E7EB; }
