@@ -189,11 +189,10 @@ async function main() {
                 const currentKey = apiKeys[idx % apiKeys.length];
                 const genAI = new GoogleGenerativeAI(currentKey);
                 
-                // ★ [진화] 에이전트 뇌(System Instruction) 튜닝: 검색망 확장 및 합리적 추정 허용
                 const draftModel = genAI.getGenerativeModel({ 
                     model: "gemini-2.5-flash",
                     tools: [{ googleSearch: {} }],
-                    systemInstruction: "당신은 인간의 심리를 꿰뚫어 보는 15년 차 수석 게임 시스템 기획자이자 디렉터입니다. 타겟 게임의 내부 수치(공식)나 DB 구조는 외부에서 완벽히 알 수 없으므로, 게임의 UX와 BM을 바탕으로 한 당신의 '합리적 역기획(Educated Guess)'을 적극 허용합니다. 단, 시스템의 뼈대나 핵심 명칭 자체를 지어내는 것은 금지합니다. 1차 검색(레딧, 라운지)에서 정보가 안 나오면 포기하지 말고 검색 키워드를 바꿔가며 나무위키, Game8, 공식 패치노트 등을 끝까지 추적하는 딥 서치(Deep Search)를 수행하십시오. 도저히 시스템의 흔적조차 찾을 수 없을 때만 [ABORT_NO_DATA]를 출력하십시오."
+                    systemInstruction: "당신은 인간의 심리를 꿰뚫어 보는 15년 차 수석 게임 시스템 기획자이자 디렉터입니다. 타겟 게임의 내부 수치(공식)나 DB 구조는 외부에서 완벽히 알 수 없으므로, 게임의 UX와 BM을 바탕으로 한 당신의 '합리적 역기획(Educated Guess)'을 적극 허용합니다. 단, 시스템의 뼈대나 핵심 명칭 자체를 지어내는 것은 금지합니다. 1차 검색에서 정보가 안 나오면 포기하지 말고 검색 키워드를 바꿔가며 심층 사이트를 끝까지 추적하는 딥 서치(Deep Search)를 수행하십시오. 도저히 시스템의 흔적조차 찾을 수 없을 때만 [ABORT_NO_DATA]를 출력하십시오."
                 });
 
                 const qaModel = genAI.getGenerativeModel({
@@ -222,7 +221,7 @@ async function main() {
                 console.log(`\n[진행률: ${idx + 1}/${targetGames.length}] 매출 ${luckyRank}위: ${luckyGame.title} 처리 중...`);
                 console.log(`  -> 🎯 타겟 분석 영역: [${randomCategory}] / 출시일: ${releaseDate}`);
 
-                // ★ [진화] 프롬프트: 딥 서치 지시 + 합리적 추정(Educated Guess) 허용 문구 명시
+                // ★ [최종 진화] 검증(Validation) 로직 추가 프롬프트
                 const prompt = `
 # Input
 * **타겟 게임:** [${luckyGame.developer}]의 ${luckyGame.title} (구글 매출 ${luckyRank}위)
@@ -253,15 +252,18 @@ async function main() {
 07. **비교 분석 및 인사이트**: 유사 장르 탑 티어 게임과의 시스템 비교 매트릭스 및 실무적 개선 제안
 08. **참고 문헌 및 팩트 체크 출처**: (★ 필수: 이 분석을 위해 구글 검색에서 참조한 실제 URL 웹 링크 최소 2개)
 
-# ★ [핵심] 딥 서치(Deep Search) 및 글로벌 크로스 체킹 전략
+# ★ [핵심] 딥 서치(Deep Search) 및 글로벌 데이터 정답 검증 전략
 1. **주체 식별**: 제공된 법인명([${luckyGame.developer}])은 '퍼블리셔'입니다. 실제 '개발사'가 어디인지 파악하십시오.
 2. **심층 검색망 가동**: 
    - 1차 검색(Reddit, Fandom Wiki, 한국 인벤/라운지)에서 정보가 부족할 경우 절대 포기하지 마십시오.
    - 검색 키워드를 변경하여 **"나무위키(Namuwiki), 일본 게임에이트(Game8) 및 게임위드(Gamewith), 중국 NGA, 유튜브 패치노트 요약글"** 등 2차, 3차 심층 사이트를 끝까지 파헤쳐 팩트를 캐내십시오.
-3. (중요) 언어 장벽을 넘어 수집된 정보는 **반드시 전문적인 한국어 게임 기획/서버 용어로 번역 및 정제**하십시오.
+3. **데이터 정답 검증 (Validation Protocol)**: 
+   - 심층 검색으로 찾은 링크나 데이터가 **과거 CBT 데이터인지, 구버전 패치 내용인지, 혹은 유저의 단순 뇌피셜(루머)인지 반드시 교차 검증**하십시오.
+   - 서로 다른 2개 이상의 출처에서 교차 확인된 내용이나, 공식 패치노트/인게임 스크린샷과 일치하는 논리적인 정보만을 '진짜 정답(Fact)'으로 확정하여 문서에 반영하십시오.
+4. (중요) 언어 장벽을 넘어 수집된 정보는 **반드시 전문적인 한국어 게임 기획/서버 용어로 번역 및 정제**하십시오.
 
 # Output Constraints (절대 수정 금지)
-* [사고 과정 노출 금지]: 내부 검색 과정은 텍스트로 노출하지 마십시오.
+* [사고 과정 노출 금지]: 내부 검색 및 검증 과정은 텍스트로 노출하지 마십시오.
 * [Mermaid 규칙]: 화살표 텍스트(\`-->|텍스트|\`)는 10자 이내. 대괄호, 중괄호 안에 콜론(:), 따옴표("), 쉼표(,) 절대 금지.
 * [노드 ID 규칙]: Mermaid 다이어그램의 노드 ID는 반드시 띄어쓰기 없는 알파벳+숫자 조합(예: A1, B2)으로 작성.
 `;
