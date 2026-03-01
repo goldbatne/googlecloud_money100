@@ -417,7 +417,7 @@ ${currentMermaid}
                                 await delay(15000); 
                             }
                             if (!qaSuccess) {
-                                console.log(`  -> 🚨 [최후 방어선] 외계어 감지. 해당 게임 분석을 스킵합니다.`);
+                                console.log(`  -> 🚨 [최후 방어선] 외계어 감지. 스킵합니다.`);
                                 isMermaidBroken = true;
                                 break; 
                             }
@@ -466,29 +466,31 @@ ${currentMermaid}
                   mdSaved = true;
                 } catch (e) { console.error(`  -> ❌ [MD] 저장 실패: ${e.message}`); }
 
-                // ★ PDF CSS 타임아웃 방어 (우분투 로컬 CJK 폰트 적용)
+                // ★ [최종 복원] 75% Scale 옵션 부활 및 완벽 렌더링 설정
                 try {
                   console.log(`  -> 📄 [PDF] 변환 시작...`);
                   const pdfData = await mdToPdf({ content: pdfText }, {
                       timeout: 120000, 
                       launch_options: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
                       css: `
-                          body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans CJK KR', sans-serif; line-height: 1.7; color: #1F2937; padding: 20px; background-color: #ffffff; }
-                          h1 { font-size: 2.4em; font-weight: 800; border-bottom: 4px solid #4F46E5; padding-bottom: 12px; margin-bottom: 25px; color: #111827; }
-                          h2 { font-size: 1.6em; font-weight: 700; color: #4F46E5; margin-top: 2.2em; border-bottom: 1px solid #E5E7EB; padding-bottom: 8px; }
-                          h3 { font-size: 1.3em; font-weight: 600; color: #374151; margin-top: 1.5em; }
-                          blockquote { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 15px 20px; border-radius: 0 8px 8px 0; color: #4338CA; margin: 20px 0; font-weight: 500; font-size: 1.05em; }
-                          table { width: 100%; border-collapse: collapse; margin: 25px 0; font-size: 0.95em; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-                          th, td { border: 1px solid #E5E7EB; padding: 12px 15px; text-align: left; }
-                          th { background-color: #F9FAFB; font-weight: 600; color: #111827; }
-                          pre { background-color: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; margin: 20px 0; overflow-x: auto; }
-                          code { font-family: monospace; font-size: 0.9em; color: #E11D48; background-color: #F1F5F9; padding: 4px 8px; border-radius: 6px; }
-                          pre code { background-color: transparent; color: inherit; padding: 0; }
-                          hr { border: 0; height: 1px; background: #E5E7EB; margin: 30px 0; }
-                          img { display: block; margin: 30px auto; max-width: 90%; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-                          @media (max-width: 768px) { body { padding: 15px 10px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
+                          body { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.6; color: #1F2937; padding: 0; margin: 0; }
+                          h1 { font-size: 2.0em; font-weight: 800; border-bottom: 2px solid #4F46E5; padding-bottom: 10px; margin-bottom: 20px; color: #111827; page-break-after: avoid; }
+                          h2 { font-size: 1.4em; font-weight: 700; color: #4F46E5; margin-top: 1.5em; border-bottom: 1px solid #E5E7EB; padding-bottom: 6px; page-break-after: avoid; }
+                          h3 { font-size: 1.2em; font-weight: 600; color: #374151; margin-top: 1.2em; page-break-after: avoid; }
+                          blockquote { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 12px 15px; color: #4338CA; margin: 15px 0; font-weight: 500; font-size: 0.95em; page-break-inside: avoid; }
+                          
+                          table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.85em; table-layout: fixed; word-wrap: break-word; }
+                          th, td { border: 1px solid #E5E7EB; padding: 8px 10px; text-align: left; word-break: keep-all; overflow-wrap: break-word; }
+                          tr { page-break-inside: avoid; }
+                          
+                          pre { background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 15px 0; white-space: pre-wrap; word-wrap: break-word; page-break-inside: avoid; }
+                          code { font-family: monospace; font-size: 0.9em; color: #DB2777; background-color: #F9FAFB; padding: 2px 4px; border-radius: 4px; word-break: break-all; }
+                          pre code { background-color: transparent; color: inherit; padding: 0; word-break: break-all; }
+                          
+                          img { display: block; margin: 20px auto; max-width: 100% !important; height: auto !important; object-fit: contain; page-break-inside: avoid; }
                       `,
-                      pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } }
+                      // ★ scale: 0.75 적용 완료
+                      pdf_options: { format: 'A4', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' }, scale: 0.75, printBackground: true }
                   });
                   
                   if (!pdfData || !pdfData.content) throw new Error("PDF 변환 엔진이 빈 데이터를 반환했습니다.");
@@ -503,7 +505,6 @@ ${currentMermaid}
                   pdfSaved = true;
                 } catch (e) { console.error(`  -> ❌ [PDF] 변환/저장 실패: ${e.message}`); }
 
-                // ★ HTML CSS 마크다운 깨짐 버그 영구 제거 완료
                 try {
                   console.log(`  -> 🌐 [HTML] 변환 시작...`);
                   const parsedHtmlBody = marked.parse(pdfText); 
@@ -515,7 +516,7 @@ ${currentMermaid}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${luckyGame.title} 분석 문서</title>
+    <title>${luckyGame.title} 역기획서</title>
     <style>
         @import url('[https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css](https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css)');
         :root { --primary: #4F46E5; --bg: #F3F4F6; --card-bg: #FFFFFF; --text-main: #1F2937; --border: #E5E7EB; }
@@ -525,14 +526,17 @@ ${currentMermaid}
         h2 { font-size: 1.6em; font-weight: 700; color: var(--primary); margin-top: 2.5em; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         h3 { font-size: 1.3em; font-weight: 600; color: #374151; margin-top: 1.8em; }
         blockquote { background: #EEF2FF; border-left: 5px solid var(--primary); padding: 20px; margin: 25px 0; border-radius: 0 12px 12px 0; color: #4338CA; font-weight: 500; font-size: 1.05em; }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 30px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-        th { background-color: #F9FAFB; padding: 16px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); color: #374151; }
-        td { padding: 16px; border-bottom: 1px solid var(--border); }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 30px 0; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); table-layout: fixed; word-wrap: break-word; }
+        th { background-color: #F9FAFB; padding: 16px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); color: #374151; word-break: keep-all; }
+        td { padding: 16px; border-bottom: 1px solid var(--border); word-break: keep-all; overflow-wrap: break-word; }
         tr:last-child td { border-bottom: none; }
-        pre { background: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; overflow-x: auto; margin: 20px 0; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.06); }
-        code { font-family: monospace; font-size: 0.9em; color: #E11D48; background-color: #F1F5F9; padding: 4px 8px; border-radius: 6px; }
-        pre code { background: transparent; color: inherit; padding: 0; }
-        img { display: block; margin: 40px auto; max-width: 90%; height: auto; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        
+        pre { background: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; overflow-x: auto; margin: 20px 0; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.06); white-space: pre-wrap; word-wrap: break-word; }
+        code { font-family: monospace; font-size: 0.9em; background: #F1F5F9; color: #E11D48; padding: 4px 8px; border-radius: 6px; word-break: break-all; }
+        pre code { background: transparent; color: inherit; padding: 0; word-break: break-all; }
+        
+        img { display: block; margin: 40px auto; max-width: 100% !important; height: auto !important; object-fit: contain; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         hr { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
         @media (max-width: 768px) { body { padding: 15px 10px; } .report-container { padding: 30px 20px; border-radius: 16px; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } }
     </style>
