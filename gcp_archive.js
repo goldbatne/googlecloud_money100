@@ -114,11 +114,7 @@ const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 
 // =============================================================================
-//  🔑  API 키 Round-Robin Queue
-//
-//  기존 방식(idx % keys.length)은 루프 인덱스가 고정되어 있어
-//  특정 키에 요청이 집중될 수 있다.
-//  이 클래스는 사용한 키를 맨 뒤로 돌려 공정한 순환을 보장한다.
+//  🔑  API 키 Round-Robin Queue — 사용한 키를 맨 뒤로 순환
 // =============================================================================
 
 class ApiKeyQueue {
@@ -151,12 +147,7 @@ const apiKeyQueue = new ApiKeyQueue(
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * KST(한국 표준시) 기준 날짜 분해
- *
- * 기존: UTC Date에 오프셋을 더한 뒤 toISOString()으로 변환
- * → 내부적으로 여전히 UTC 기준이라 날짜가 밀리는 버그 존재
- * 개선: Intl.DateTimeFormat + 'Asia/Seoul' 타임존으로 정확하게 처리
- *
+ * KST 기준 날짜 분해 (Intl.DateTimeFormat + Asia/Seoul)
  * @returns {{ dateString, yearStr, monthStr, dayStr }}
  */
 function getKSTDateParts() {
@@ -283,37 +274,6 @@ async function uploadToDrive({ fileName, folderId, mimeType, content }) {
     });
     return true;
 }
-
-/**
- * 에러 로그 문자열 배열을 txt 파일로 Drive 루트에 저장
- * 실패해도 파이프라인 전체에 영향을 주지 않도록 내부에서 에러를 흡수함
- *
- * @param {string}   dateString 날짜 문자열 (파일명에 사용)
- * @param {string[]} errorLog   에러 메시지 배열
- */
-async function uploadErrorLog(dateString, errorLog) {
-    if (errorLog.length === 0) return;
-
-    try {
-        const content = [
-            `[${dateString}] 에러 로그`,
-            '='.repeat(50),
-            ...errorLog.map((msg, i) => `${i + 1}. ${msg}`),
-        ].join('\n');
-
-        const body = new stream.PassThrough();
-        body.end(Buffer.from(content, 'utf8'));
-
-        await drive.files.create({
-            requestBody: { name: `[${dateString}]_ERROR_LOG.txt`, parents: [ROOT_FOLDER_ID] },
-            media:       { mimeType: 'text/plain', body },
-        });
-        console.log(`\n📋 에러 로그 파일이 Drive에 저장되었습니다.`);
-    } catch {
-        // 로그 저장 실패는 파이프라인에 영향 없음
-    }
-}
-
 
 // =============================================================================
 //  🧹  Mermaid 코드 정제 (sanitizeMermaid)
@@ -685,44 +645,116 @@ function buildHtmlReport(gameTitle, bodyHtml) {
 //  출처 URL이 없으면 재시도 트리거 (scoutHasSource 검증에서 잡음)
 // =============================================================================
 
-function buildScoutPrompt(game) {
+// buildScoutPrompt — 3단계 순차 검색 (1:공식카페 2:나무위키/인벤 3:커뮤니티)
+// 검색어를 코드가 직접 지정해 AI가 키워드를 임의로 결정하지 못하게 막는다.
+
+function buildScoutPrompt(game, attempt = 1) {
     const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}`;
+
+    // 회차별 검색 전략 — 검색 키워드까지 코드가 직접 지정
+    // 검색 전략 설계 원칙:
+    //   - site: 연산자는 Gemini Search에서 지원이 불안정하므로 사용하지 않음
+    //   - 대신 도메인명을 검색어 안에 자연어로 포함시키거나 (예: "나무위키 메이플 키우기")
+    //     검색 결과 우선순위 힌트를 trusted_domains로 명시해 AI가 필터링하도록 유도
+    const strategies = {
+        1: {
+            label: '공식 1차 출처 (공식카페·공홈·디스코드)',
+            queries: [
+                // 자연어에 도메인명 포함 → site: 없이도 해당 출처 우선 검색
+                `${game.title} 네이버 공식카페 시스템 재화 메뉴`,
+                `${game.title} ${game.developer} 공식 홈페이지 콘텐츠`,
+                `${game.title} 앱ID ${game.appId} 공략 시스템명`,
+                `${game.title} 공식 디스코드 게임 시스템 안내`,
+            ],
+            priority: '공식 네이버카페 > 공식 홈페이지 > 공식 디스코드 > 구글플레이 설명',
+            trusted_domains: 'cafe.naver.com (공식카페), 개발사 공식 도메인, discord.com',
+        },
+        2: {
+            label: '나무위키·인벤 (정제된 2차 출처)',
+            queries: [
+                // 나무위키는 도메인명을 직접 검색어에 포함하면 결과 상위에 노출됨
+                `나무위키 ${game.title} 시스템 재화 콘텐츠`,
+                `인벤 ${game.title} 공략 재화 메뉴 정리`,
+                `${game.title} 위키 콘텐츠 시스템 목록`,
+            ],
+            priority: 'namu.wiki > inven.co.kr > gamewith.kr',
+            trusted_domains: 'namu.wiki, inven.co.kr, gamewith.kr, arca.live',
+        },
+        3: {
+            label: '커뮤니티·유튜브 (최후 수단)',
+            queries: [
+                `아카라이브 OR 디시인사이드 ${game.title} 시스템 재화 정리`,
+                `${game.title} 초보 가이드 재화 종류 메뉴 설명`,
+                `유튜브 ${game.title} 공략 시스템 설명 영상`,
+            ],
+            priority: 'arca.live > dcinside.com > reddit.com > youtube.com',
+            trusted_domains: 'arca.live, dcinside.com, reddit.com, youtube.com',
+        },
+    };
+
+    const s = strategies[attempt] || strategies[3];
+
     return `
-# [팩트 수집 전용] ${game.title} — 실제 명칭만 수집
+# [팩트 수집 ${attempt}회차] ${game.title} — 실제 게임 내 명칭만 수집
 
-## 타겟 게임 (절대 변경 금지)
-- 게임명: ${game.title}
-- 앱 ID:  ${game.appId}
-- 스토어: ${storeUrl}
+## ⚠️ 타겟 게임 고정 (절대 변경 금지)
+- 게임명:    ${game.title}
+- 앱 ID:     ${game.appId}
+- 스토어URL: ${storeUrl}
+- 개발사:    ${game.developer}
 
-## 임무
-아래 4가지 항목만 조사하십시오. 분석·설명·추측은 절대 금지.
-나무위키, 공식 카페/디스코드, 인벤, 게임 공식 홈페이지를 우선 탐색.
+---
 
-1. **[시스템명]** 게임 내 메인 콘텐츠 시스템 이름 (게임 UI에 실제로 표시되는 명칭)
-   예시: "성장의탑", "마계원정", "영웅 승급" 등
-   → 최대 10개, 쉼표로 구분
+## 검색 전략: ${s.label}
 
-2. **[재화명]** 게임 내 화폐·재료·포인트 명칭 (UI 표기 그대로)
-   예시: "다이아", "골드", "명성", "우정 포인트" 등
-   → 최대 10개, 쉼표로 구분
+### 이번 회차 지정 검색어 (아래 순서대로 실행)
+${s.queries.map((q, i) => (i+1) + '. ' + q).join('\n')}
+')}
 
-3. **[메뉴명]** 메인 로비 하단 탭 또는 주요 진입 메뉴 명칭
-   예시: "영웅", "던전", "길드", "상점" 등
-   → 최대 8개, 쉼표로 구분
+### 신뢰 우선순위
+${s.priority}
 
-4. **[출처URL]** 위 정보를 찾은 실제 페이지 URL (최소 1개 필수)
+### 허용 도메인 (이 도메인 출처만 신뢰)
+${s.trusted_domains}
 
-## 출력 형식 (이 형식 그대로, 줄 바꿈 포함)
+---
+
+## 수집 항목 (4가지만, 분석·추측 절대 금지)
+
+**[시스템명]** 게임 UI에 실제로 표시되는 콘텐츠/기능 이름
+- 조건: 유저가 실제로 탭하거나 메뉴에서 보는 명칭 그대로
+- 형식: 최대 12개, 쉼표 구분
+- ❌ 금지: 비슷한 다른 게임 시스템명 유추·혼용
+
+**[재화명]** 게임 내 실제 화폐·포인트·재료 명칭 (UI 표기 그대로)
+- 형식: 최대 12개, 쉼표 구분
+- ❌ 금지: "골드", "다이아" 같은 일반 명칭 추측 (실제 명칭 확인 필수)
+
+**[메뉴명]** 메인 화면 하단 탭 또는 주요 진입 버튼 명칭
+- 형식: 최대 8개, 쉼표 구분
+
+**[출처URL]** 위 정보를 직접 확인한 페이지 URL
+- 필수: 최소 1개 이상 (URL 없으면 이번 회차 실패로 간주)
+- 조건: 허용 도메인 내 URL만 유효
+- ❌ 금지: google.com/search 결과 URL, 상상으로 만든 URL
+
+---
+
+## 출력 형식 (이 형식 외 다른 텍스트 절대 금지)
 [시스템명]  (쉼표 구분 목록)
 [재화명]    (쉼표 구분 목록)
 [메뉴명]    (쉼표 구분 목록)
-[출처URL]   (URL)
+[출처URL]   (URL1, URL2, ...)
+[출처신뢰도] 높음 / 보통 / 낮음
 
-## 주의
-- ${game.title}이 아닌 다른 게임 명칭이 섞이면 [IP_CONFUSED] 출력 후 종료.
-- 검색해도 게임 관련 데이터가 전혀 없으면 [ABORT_NO_DATA] 출력 후 종료.
-- 위 형식 외 다른 텍스트(인사말, 설명, 분석) 절대 금지.
+## 신뢰도 판단 기준
+- 높음: 공식 카페·공홈·나무위키에서 직접 확인한 명칭
+- 보통: 인벤·arca 등 신뢰할 만한 커뮤니티 다수 교차 확인
+- 낮음: 단일 커뮤니티 글·유튜브 제목에서만 확인
+
+## 중단 조건
+- ${game.title}이 아닌 다른 게임 명칭이 섞이면: [IP_CONFUSED]
+- 지정 검색어 3개 모두 실행해도 관련 데이터 없으면: [ABORT_NO_DATA]
 `;
 }
 
@@ -756,12 +788,14 @@ function buildAnalysisPrompt(game, rank, category, factSheet = '') {
 시스템:   (15자 이내 명사형, 파일명에 사용될 핵심 시스템명)
 
 # [고정 어휘 사전] — 아래 명칭 외 시스템명·재화명을 임의로 생성하지 마십시오
-\${factSheet ? \`\${factSheet}
+${factSheet ? `${factSheet}
 
-위 사전에 없는 시스템명·재화명은 "데이터 비공개 (검색 불가)"로 표기하십시오.
-위 사전에 있는 명칭은 반드시 그대로 사용하십시오 (동의어·번역 금지).
-\` : '(팩트 사전 없음 — 딥 서치로 직접 확인 필요)'}
-
+## 준수 규칙
+1. [시스템명] 목록의 이름 → 반드시 그대로 사용 (동의어·축약·번역 금지)
+2. [재화명] 목록의 이름   → 반드시 그대로 사용
+3. 목록에 없는 명칭       → "데이터 비공개 (검색 불가)"로 표기
+4. [출처신뢰도]가 낮음    → 해당 명칭 사용 시 *(출처 미검증)* 주석 추가
+` : '⚠️ 팩트 사전 없음 — 딥 서치 직접 확인. 불가 명칭은 데이터 비공개 표기.'}
 # Step 1: 실제 게임 내 UI 표기 명칭 타겟팅
 1. [${category}] 영역을 대표하는 시그니처 시스템 1개를 특정하십시오.
    **반드시 위 [고정 어휘 사전]의 [시스템명] 중에서 선택하십시오.**
@@ -797,21 +831,8 @@ function buildAnalysisPrompt(game, rank, category, factSheet = '') {
 }
 
 
-
-
-// =============================================================================
-//  🔍  할루시네이션 감지 (detectHallucination)
-//
-//  3가지 기준 중 하나라도 해당하면 재검색을 트리거한다.
-//
-//  감지 1: [IP_CONFUSED] 포함     — AI가 스스로 혼동을 인지한 경우
-//  감지 2: 게임명 등장 3회 미만   — 다른 게임을 분석했을 가능성
-//  감지 3: "데이터 비공개" 5회 이상 — 검색 결과 자체가 없는 상태
-//
-//  @param {string} text      검증할 리포트 텍스트
-//  @param {string} gameTitle 타겟 게임명
-//  @returns {{ detected: boolean, reason: string }}
-// =============================================================================
+// detectHallucination — 3가지 기준으로 재검색 트리거 판단
+// 감지1: [IP_CONFUSED] | 감지2: 게임명 3회 미만 | 감지3: 데이터비공개 5회+
 
 function detectHallucination(text, gameTitle) {
     // 감지 1: AI 자율 IP 혼동 신호
@@ -835,27 +856,8 @@ function detectHallucination(text, gameTitle) {
     return { detected: false, reason: '' };
 }
 
-// =============================================================================
-//  🔄  재검색 프롬프트 생성 (buildRetryPrompt)
-//
-//  회차별로 검색 전략을 점진적으로 넓혀간다:
-//    1회차: 앱ID를 검색어에 포함
-//    2회차: 나무위키·인벤·레딧 커뮤니티 중심
-//    3회차: 유튜브 공략 영상 기반
-//    4회차: 해외 커뮤니티(Game8, NGA, 일본 wiki) 검색
-//    5회차: 최소 공개 정보 + 장르 특성 기반 합리적 추정 허용
-//
-//  이전 리포트 앞 800자를 참고용으로 포함해
-//  Gemini가 어떤 항목이 비어 있었는지 인식하고 재검색하도록 유도한다.
-//
-//  @param {object} game       게임 정보 { title, developer, appId }
-//  @param {number} rank       순위
-//  @param {string} category   분석 카테고리
-//  @param {string} prevText   이전 시도 리포트 텍스트
-//  @param {string} failReason 감지된 실패 이유
-//  @param {number} attempt    현재 재시도 회차 (1~5)
-//  @returns {string}
-// =============================================================================
+// buildRetryPrompt — 할루시네이션 감지 후 재검색 프롬프트 (1~5회차 전략 확대)
+// 1:appId포함 2:나무위키/인벤 3:유튜브 4:Game8/NGA 5:최소정보+추정허용
 
 function buildRetryPrompt(game, rank, category, prevText, failReason, attempt, factSheet = '') {
     const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}`;
@@ -981,9 +983,7 @@ async function main() {
         const targetGames = allGames.slice(START_RANK - 1, END_RANK);
         console.log(`\n[${dateString}] 🗄️  파이프라인 가동 (${START_RANK}위 ~ ${END_RANK}위, 총 ${targetGames.length}개)`);
 
-        // 집계 카운터
-        // 기존: successCount 하나로 전부/일부 성공을 구분 없이 집계 → 결산 수치 왜곡
-        // 개선: full / partial 분리하여 실제 품질 파악 가능하게
+        // 집계 카운터 (full/partial/skipped 분리)
         let fullSuccessCount    = 0; // MD + PDF + HTML 모두 저장 성공
         let partialSuccessCount = 0; // 1~2개 포맷만 저장 성공
         let skippedCount        = 0; // AI 판단 스킵 또는 API 3회 실패
@@ -1048,50 +1048,83 @@ async function main() {
             console.log(`\n${progress} 매출 ${rank}위: ${game.title}`);
             console.log(`  -> 🎯 분석 영역: [${category}] / 출시일: ${releaseDate}`);
 
-            // 4-3. Scout — 시스템명·재화명·메뉴명 수집 (팩트 고정)
-            //
-            //  목적: writer가 명칭을 지어내는 것을 원천 차단.
-            //        scout가 실제 명칭을 수집한 뒤, 그 결과를 buildAnalysisPrompt에
-            //        '고정 어휘 사전'으로 박아넣어 writer가 사전 외 명칭을 못 쓰게 강제.
-            //
-            //  scout 실패 시: factSheet = '' 로 writer에게 넘겨 딥서치로 대체.
-            //                 스킵하지 않음 — writer가 직접 찾도록 유도.
-            let factSheet = '';
-            try {
-                await delay(3000);
-                const scoutResult = await scoutModel.generateContent(buildScoutPrompt(game));
-                const scoutText   = scoutResult.response.text().trim();
+            // 4-3. Scout — 공식카페→나무위키→커뮤니티 3단계 순서로 실제 명칭 수집
+            //             높음/보통만 factSheet 채택, 낮음이면 다음 회차로 재시도
 
-                // scout 결과 유효성 확인
-                // [ABORT_NO_DATA] → 데이터 없음 확실, writer까지 갈 필요 없음
-                if (scoutText.includes('[ABORT_NO_DATA]')) {
-                    console.log(`  -> ⏭️  [SCOUT-SKIP] 스카우트 단계에서 데이터 없음 확인. 스킵.`);
-                    skippedCount++;
-                    continue;
-                }
-                // [IP_CONFUSED] → 명칭 섞임, factSheet 버리고 writer에게 직접 탐색 위임
-                if (scoutText.includes('[IP_CONFUSED]')) {
-                    console.log(`  -> ⚠️  [SCOUT-IP] 스카우트 IP 혼동 감지. 팩트 사전 없이 writer 진행.`);
-                } else {
-                    // 출처 URL 포함 여부 확인 (없으면 신뢰도 낮음 — 경고만, 진행은 계속)
-                    const scoutHasSource = scoutText.includes('[출처URL]') &&
-                                          scoutText.match(/https?:\/\//);
-                    if (!scoutHasSource) {
-                        console.log(`  -> ⚠️  [SCOUT-NO-URL] 출처 URL 없음. 명칭 신뢰도 낮음.`);
-                    }
-                    factSheet = scoutText;
-                    console.log(`  -> 🔭 [SCOUT-OK] 팩트 사전 수집 완료`);
-                }
-            } catch (scoutErr) {
-                console.log(`  -> ⚠️  [SCOUT-ERR] 수집 실패 (${scoutErr.message?.substring(0,60)}). 팩트 사전 없이 진행.`);
+            // minInstalls 기준으로 scout 횟수 결정: 100만+→3회 / 10만+→2회 / 미만→1회
+            const gameInstalls    = game.minInstalls || 0;
+            const MAX_SCOUT_RETRIES = gameInstalls >= 1_000_000 ? 3
+                                   : gameInstalls >= 100_000   ? 2
+                                   : 1;
+            if (MAX_SCOUT_RETRIES < 3) {
+                console.log(`  -> ℹ️  [SCOUT-LIMIT] 설치수 ${gameInstalls.toLocaleString()}. scout 최대 ${MAX_SCOUT_RETRIES}회로 제한.`);
             }
 
-            // 4-4. 역기획서 초안 생성
-            //
-            // 2단계 재시도 구조:
-            //   1단계 (API 재시도):  rate limit 등 API 오류 → 최대 3회
-            //   2단계 (재검색):      할루시네이션 감지 → 전략을 바꿔 최대 5회 재검색
-            //                        5회 후에도 통과 못하면 스킵
+            let factSheet           = '';
+            let scoutTrustLevel     = 'none'; // none / low / medium / high
+            let scoutAborted        = false;
+
+            for (let sAttempt = 1; sAttempt <= MAX_SCOUT_RETRIES; sAttempt++) {
+                try {
+                    await delay(3000);
+                    console.log(`  -> 🔭 [SCOUT ${sAttempt}/${MAX_SCOUT_RETRIES}] 팩트 수집 시도...`);
+                    const scoutResult = await scoutModel.generateContent(buildScoutPrompt(game, sAttempt));
+                    const scoutText   = scoutResult.response.text().trim();
+
+                    // 중단 조건 확인
+                    if (scoutText.includes('[ABORT_NO_DATA]')) {
+                        console.log(`  -> ⏭️  [SCOUT-SKIP] 데이터 없음 확인. 스킵.`);
+                        scoutAborted = true;
+                        break;
+                    }
+                    if (scoutText.includes('[IP_CONFUSED]')) {
+                        console.log(`  -> ⚠️  [SCOUT-IP ${sAttempt}회] IP 혼동 감지. 다음 회차로.`);
+                        continue;
+                    }
+
+                    // URL 존재 여부 확인
+                    const hasUrl = scoutText.includes('[출처URL]') && /https?:\/\//.test(scoutText);
+                    if (!hasUrl) {
+                        console.log(`  -> ⚠️  [SCOUT-NO-URL ${sAttempt}회] URL 없음. 다음 회차로.`);
+                        continue;
+                    }
+
+                    // 신뢰도 레벨 파싱
+                    const trustMatch = scoutText.match(/\[출처신뢰도\]\s*(높음|보통|낮음)/);
+                    const trust      = trustMatch ? trustMatch[1] : '낮음';
+
+                    if (trust === '낮음') {
+                        console.log(`  -> ⚠️  [SCOUT-LOW-TRUST ${sAttempt}회] 신뢰도 낮음. 다음 회차로.`);
+                        // 낮음이라도 마지막 회차면 사용 (없는 것보단 나음)
+                        if (sAttempt === MAX_SCOUT_RETRIES) {
+                            factSheet      = scoutText;
+                            scoutTrustLevel = 'low';
+                            console.log(`  -> ⚠️  [SCOUT-LOW-ACCEPT] 신뢰도 낮음이지만 최후 수단으로 채택.`);
+                        }
+                        continue;
+                    }
+
+                    // 높음 or 보통 → 채택
+                    factSheet       = scoutText;
+                    scoutTrustLevel = trust === '높음' ? 'high' : 'medium';
+                    console.log(`  -> ✅ [SCOUT-OK] 팩트 수집 완료 (신뢰도: ${trust}, ${sAttempt}회차)`);
+                    break;
+
+                } catch (scoutErr) {
+                    console.log(`  -> ⚠️  [SCOUT-ERR ${sAttempt}회] ${scoutErr.message?.substring(0,60)}`);
+                }
+            }
+
+            if (scoutAborted) {
+                skippedCount++;
+                continue;
+            }
+
+            if (!factSheet) {
+                console.log(`  -> ⚠️  [SCOUT-FAIL] 3회 모두 실패. 팩트 사전 없이 writer 직접 탐색.`);
+            }
+
+            // 4-4. 역기획서 초안 생성 (API 오류 최대 3회 재시도)
             let reportText   = '';
             let draftSuccess = false;
 
@@ -1129,19 +1162,7 @@ async function main() {
                 continue;
             }
 
-            // 4-5. 할루시네이션 감지 → 최대 5회 재검색
-            //
-            //  감지 기준:
-            //    - [IP_CONFUSED] 신호  : AI가 IP 혼동 자율 감지
-            //    - 게임명 3회 미만      : 다른 게임을 분석했을 가능성
-            //    - "데이터 비공개" 5회+ : 사실상 검색 결과 없음
-            //
-            //  회차별 전략:
-            //    1회: appId 포함 검색
-            //    2회: 나무위키·인벤·레딧
-            //    3회: 유튜브 공략 영상
-            //    4회: Game8·NGA·해외 커뮤니티
-            //    5회: 최소 정보 + 추정 허용
+            // 4-5. 할루시네이션 감지 → 최대 5회 재검색 (detectHallucination 기준)
             let hallucinationPassed = false;
 
             for (let hRetry = 0; hRetry <= MAX_HALLUCINATION_RETRIES; hRetry++) {
@@ -1327,10 +1348,9 @@ async function main() {
             if (idx < targetGames.length - 1) await delay(30000);
         }
 
-        // ── 5. 에러 로그 Drive 업로드 ────────────────────────────────────────
-        await uploadErrorLog(dateString, errorLog);
+        // ── 5. 최종 결산 (에러/검수 로그는 GitHub Actions 콘솔에서 확인)
 
-        // ── 6. 최종 결산 출력 ────────────────────────────────────────────────
+        // ── 5. 최종 결산 출력 ────────────────────────────────────────────────
         const failedCount = targetGames.length - fullSuccessCount - partialSuccessCount - skippedCount;
         console.log(`\n${'='.repeat(56)}`);
         console.log(`[${dateString}] 📊 최종 결산`);
