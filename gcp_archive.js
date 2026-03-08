@@ -61,7 +61,8 @@ const ANALYSIS_CATEGORIES = [
 ];
 
 // PDF 변환 옵션 (md-to-pdf / Puppeteer 기반)
-// --max-old-space-size: 50회 루프 시 Puppeteer OOM 방지를 위해 JS 힙 상한 제한
+// --max-old-space-size: 50회 루프 시 Puppeteer OOM 방지
+// --font-render-hinting=none: GitHub Actions 환경 한글 폰트 렌더링 안정화
 const PDF_OPTIONS = {
     timeout: 120000,
     launch_options: {
@@ -70,27 +71,125 @@ const PDF_OPTIONS = {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
+            '--font-render-hinting=none',
             '--js-flags=--max-old-space-size=512',
         ],
     },
+    // Noto Sans KR: Google Fonts CDN → Puppeteer가 웹폰트 로드 가능
+    // (시스템 폰트 의존 제거. waitForNetworkIdle 없이도 @font-face가 먼저 평가됨)
     css: `
-        body        { font-family: 'Noto Sans CJK KR', sans-serif; line-height: 1.6; color: #1F2937; padding: 0; margin: 0; }
-        h1          { font-size: 2.0em; font-weight: 800; border-bottom: 2px solid #4F46E5; padding-bottom: 10px; margin-bottom: 20px; color: #111827; page-break-after: avoid; }
-        h2          { font-size: 1.4em; font-weight: 700; color: #4F46E5; margin-top: 1.5em; border-bottom: 1px solid #E5E7EB; padding-bottom: 6px; page-break-after: avoid; }
-        h3          { font-size: 1.2em; font-weight: 600; color: #374151; margin-top: 1.2em; page-break-after: avoid; }
-        blockquote  { background-color: #EEF2FF; border-left: 5px solid #4F46E5; padding: 12px 15px; color: #4338CA; margin: 15px 0; font-weight: 500; font-size: 0.95em; page-break-inside: avoid; }
-        table       { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.85em; table-layout: auto; }
-        th, td      { border: 1px solid #E5E7EB; padding: 8px 10px; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
-        tr          { page-break-inside: avoid; }
-        pre         { background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 15px 0; white-space: pre-wrap; word-break: break-all; page-break-inside: avoid; }
-        code        { font-family: monospace; font-size: 0.9em; color: #DB2777; background-color: #F9FAFB; padding: 2px 4px; border-radius: 4px; word-break: break-all; }
-        pre code    { background-color: transparent; color: inherit; padding: 0; word-break: break-all; }
-        div         { page-break-inside: avoid; break-inside: avoid; }
-        img         { display: block; margin: 20px auto; max-width: 100% !important; max-height: 220mm !important; height: auto !important; object-fit: contain; page-break-inside: avoid; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            font-size: 10pt;
+            line-height: 1.7;
+            color: #1F2937;
+            margin: 0;
+            padding: 6mm 0;
+            word-break: break-all;
+            overflow-wrap: anywhere;
+        }
+
+        h1 {
+            font-size: 18pt; font-weight: 800; color: #111827;
+            border-bottom: 3px solid #4F46E5;
+            padding-bottom: 8px; margin: 0 0 18px;
+            page-break-after: avoid;
+        }
+        h2 {
+            font-size: 13pt; font-weight: 700; color: #4F46E5;
+            border-bottom: 1px solid #E5E7EB;
+            padding-bottom: 5px; margin: 24px 0 10px;
+            page-break-after: avoid;
+        }
+        h3 {
+            font-size: 11pt; font-weight: 700; color: #374151;
+            margin: 18px 0 8px;
+            page-break-after: avoid;
+        }
+
+        blockquote {
+            background: #EEF2FF;
+            border-left: 4px solid #4F46E5;
+            padding: 10px 14px;
+            margin: 14px 0;
+            color: #4338CA;
+            font-weight: 500;
+            font-size: 9.5pt;
+            page-break-inside: avoid;
+        }
+
+        /* 표: 고정 레이아웃 + 셀 넘침 방지 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 8.5pt;
+            table-layout: fixed;
+            page-break-inside: auto;
+        }
+        th, td {
+            border: 1px solid #D1D5DB;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-all;
+            overflow-wrap: anywhere;
+            hyphens: auto;
+        }
+        th {
+            background-color: #F3F4F6;
+            font-weight: 700;
+            color: #111827;
+        }
+        tr { page-break-inside: avoid; }
+
+        pre {
+            background: #F3F4F6;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 8pt;
+            page-break-inside: avoid;
+        }
+        code {
+            font-family: 'Courier New', monospace;
+            font-size: 8.5pt;
+            color: #DB2777;
+            background: #FDF2F8;
+            padding: 1px 4px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+        pre code { background: transparent; color: inherit; padding: 0; }
+
+        /* 다이어그램: Base64 인라인 SVG — 외부 URL fetch 불필요 */
+        .diagram-wrap {
+            text-align: center;
+            margin: 16px 0;
+            page-break-inside: avoid;
+        }
+        .diagram-wrap img {
+            max-width: 100%;
+            max-height: 200mm;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        p  { margin: 8px 0; }
+        hr { border: 0; border-top: 1px solid #E5E7EB; margin: 20px 0; }
+        ul, ol { padding-left: 20px; margin: 8px 0; }
+        li { margin: 3px 0; }
     `,
     pdf_options: {
         format: 'A4',
-        margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+        margin: { top: '18mm', right: '18mm', bottom: '18mm', left: '18mm' },
         printBackground: true,
     },
 };
@@ -174,7 +273,7 @@ async function callGeminiWithRetry(model, prompt, maxRetries = 3) {
             const matched  = msg.match(/retry in (\d+(?:\.\d+)?)s/i);
             const waitTime = matched ? (Math.ceil(parseFloat(matched[1])) + 2) * 1000 : 15000;
             console.log(`  -> ⏱️  ${waitTime / 1000}초 냉각 후 재시도 (${attempt}/${maxRetries})... [${msg.substring(0, 80)}]`);
-            await delay(waitTime);
+            if (attempt < maxRetries) await delay(waitTime); // 마지막 실패 시 대기 불필요
         }
     }
     return '';
@@ -211,8 +310,9 @@ function isValidKrokiSvg(response, svgText) {
 
 /** 폴더 존재하면 ID 반환, 없으면 생성 후 반환. 실패 시 throw. */
 async function getOrCreateFolder(folderName, parentId) {
+    const safeName = folderName.replace(/'/g, "\\'"); // Drive 쿼리 인젝션 방어
     const res = await drive.files.list({
-        q:      `name = '${folderName}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        q:      `name = '${safeName}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
         fields: 'files(id)',
     });
     if (res.data.files.length > 0) return res.data.files[0].id;
@@ -330,26 +430,28 @@ function initModels(genAI, gameTitle, appId) {
 //  Kroki에 보내기 전 정규식으로 선제적으로 정리하는 Fast-Track 처리기.
 //
 //  처리 순서:
-//    1. 공통 전처리 (유니코드 제로폭 문자, 주석, 특수문자 제거)
-//    2. erDiagram 전용 처리 (속성 정리, 관계 표현식 정규화)
-//    3. flowchart/graph 전용 처리 (괄호 변환, 엣지/노드 텍스트 토큰화, ID 자동 부여)
+//    1. 공통 전처리 (유니코드 제로폭 문자, 주석 제거) — 따옴표 제거는 아직 하지 않음
+//    2. 다이어그램 타입 감지 후 경로 분기 (erDiagram / flowchart·graph)
+//       - erDiagram: 따옴표가 관계 레이블에 필수이므로 독립 경로에서 처리
+//       - flowchart:  공통 특수문자 제거 후 토큰화 처리
+//    ※ 이전 구조는 공통 전처리에서 " 를 먼저 제거한 뒤 erDiagram에서 "has"를
+//       다시 붙이는 순서 의존성이 있었음 → 분기 먼저 하는 구조로 수정
 // =============================================================================
 
 function sanitizeMermaid(rawCode) {
 
-    // ── 공통 전처리 ──────────────────────────────────────────────────────────
+    // ── 1단계: 공통 전처리 (따옴표 제거 제외) ────────────────────────────────
     let code = rawCode
         .replace(/[\u200B-\u200D\uFEFF]/g, '') // 유니코드 제로폭 문자 제거
         .replace(/\/\/.*$/gm, '')              // // 주석 제거
         .replace(/%%.*$/gm, '')                // %% Mermaid 주석 제거
+        .replace(/^\s*(\d+\.|[-*])\s+/gm, '') // 목록 기호(1. / - / *) 제거
         .trim();
 
-    code = code
-        .replace(/["'*#]/g, '')                // 파싱 오류 유발 특수문자 제거
-        .replace(/^\s*(\d+\.|[-*])\s+/gm, ''); // 목록 기호(1. / - / *) 제거
+    // ── 2단계: erDiagram 전용 경로 ──────────────────────────────────────────
+    // 따옴표 제거 전에 감지 → erDiagram은 관계 레이블에 "has" 큰따옴표 필수
+    if (/^erDiagram/i.test(code)) {
 
-    // ── erDiagram 전용 처리 ─────────────────────────────────────────────────
-    if (code.match(/^erDiagram/i)) {
         // 엔티티 블록 내 속성을 '타입 이름' 두 단어만 남기고 나머지 제거
         const lines  = code.split('\n');
         let inEntity = false;
@@ -364,19 +466,24 @@ function sanitizeMermaid(rawCode) {
         }
         code = lines.join('\n');
 
+        // erDiagram 전용 정제 (따옴표는 "has" 레이블용으로 마지막에 직접 부여)
         code = code
+            .replace(/['*#]/g,    '')                    // 작은따옴표·* · # 만 제거 (큰따옴표는 유지)
             .replace(/erDiagram\s+(.*)/i, 'erDiagram\n$1')
             .replace(/\(.*?\)/g,  '')
             .replace(/,/g,        '\n')
             .replace(/\bENUM\b/gi, '')
             .replace(/\b(PK|FK|UK|Optional)\b/gi, '')
             .replace(/^[a-zA-Z가-힣0-9_]+\s*:\s*(?=[a-zA-Z0-9_]+\s*\|\|--)/gm, '')
+            // 관계 레이블 → "has" (큰따옴표 직접 삽입 — 공통 전처리가 이미 지우지 않음)
             .replace(/(\|\|--o{|}\|--\|{|}\|--o{|\|\|--\|{|}-o|}-\||-o|-\|)\s*([a-zA-Z0-9_]+)\s*:\s*(.*?)$/gm, '$1 $2 : "has"');
 
         return code;
     }
 
-    // ── flowchart / graph 전용 처리 ─────────────────────────────────────────
+    // ── 3단계: flowchart / graph 전용 경로 ──────────────────────────────────
+    // erDiagram이 아닌 경우에만 따옴표 포함 특수문자 전체 제거
+    code = code.replace(/["'*#]/g, '');
 
     // 비표준 괄호 조합 → 표준 괄호
     code = code
@@ -460,24 +567,29 @@ function sanitizeMermaid(rawCode) {
 //    1단계 Fast-Track: sanitizeMermaid 정규식 정제 → Kroki 검증
 //    2단계 QA Agent:   실패 시 Gemini 재작성 요청 → 최대 5회
 //  최종 실패 블록은 ⚠️ 플레이스홀더로 대체하고 나머지 리포트는 정상 저장
+//
+//  출력: mdText 단일 스트림
+//    - 성공 블록: ```mermaid 자리를 Base64 인라인 SVG img 태그로 치환
+//      → md-to-pdf(PDF)와 marked(HTML) 모두 img 태그를 그대로 통과시킴
+//      → 외부 URL fetch 없이 렌더링 (GitHub Actions sandbox 환경 대응)
+//    - 실패 블록: ⚠️ 플레이스홀더 삽입
+//  PDF·HTML 모두 이 mdText 하나를 소스로 변환하므로 별도 스트림 불필요
 // =============================================================================
 
 async function processMermaidBlocks(reportText, qaModel) {
     const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)```/gi;
     let mdText      = '';
-    let pdfText     = '';
     let lastIndex   = 0;
     let brokenCount = 0;
 
     for (const match of [...reportText.matchAll(mermaidBlockRegex)]) {
-        const preText = reportText.substring(lastIndex, match.index);
-        mdText  += preText;
-        pdfText += preText;
+        mdText += reportText.substring(lastIndex, match.index);
 
         const originalMermaid = match[1];
         let   fixedMermaid    = null;
 
         // ── 1단계: Fast-Track ────────────────────────────────────────────
+        let cachedSvg = null; // 검증에 사용한 SVG 재사용 (이중 fetch 방지)
         try {
             const cleaned = sanitizeMermaid(originalMermaid);
             const res     = await fetch(buildKrokiUrl(cleaned));
@@ -485,6 +597,7 @@ async function processMermaidBlocks(reportText, qaModel) {
             if (isValidKrokiSvg(res, svg)) {
                 console.log(`  -> ⚡ [Fast-Track 성공]`);
                 fixedMermaid = cleaned;
+                cachedSvg    = svg;
             }
         } catch { /* fetch 실패 → 2단계로 */ }
 
@@ -507,7 +620,6 @@ async function processMermaidBlocks(reportText, qaModel) {
 ${currentMermaid}`;
 
                 const qaResultText = await callGeminiWithRetry(qaModel, qaPrompt, 3);
-
                 if (!qaResultText) { await delay(15000); continue; }
 
                 try {
@@ -533,27 +645,31 @@ ${currentMermaid}`;
 
         // ── 결과 반영 ────────────────────────────────────────────────────
         if (fixedMermaid) {
-            mdText  += `\`\`\`mermaid\n${fixedMermaid}\n\`\`\``;
-            pdfText += `\n\n<div style="page-break-inside:avoid;break-inside:avoid;text-align:center;width:100%;">` +
-                       `<img src="${buildKrokiUrl(fixedMermaid)}" alt="시스템 다이어그램" ` +
-                       `style="max-width:100%;max-height:220mm;height:auto;object-fit:contain;margin:0 auto;display:block;" />` +
-                       `</div>\n\n`;
+            // cachedSvg: Fast-Track 검증 시 이미 받은 SVG → 재사용해 Kroki 요청 절약
+            // cachedSvg 없음(QA Agent 경로): 새로 fetch. 실패 시 URL 방식 폴백.
+            try {
+                const svgStr = cachedSvg ?? await fetch(buildKrokiUrl(fixedMermaid)).then(r => r.text());
+                const b64    = Buffer.from(svgStr).toString('base64');
+                mdText += `\n\n<div class="diagram-wrap">` +
+                          `<img src="data:image/svg+xml;base64,${b64}" alt="시스템 다이어그램" />` +
+                          `</div>\n\n`;
+            } catch {
+                mdText += `\n\n<div class="diagram-wrap">` +
+                          `<img src="${buildKrokiUrl(fixedMermaid)}" alt="시스템 다이어그램" />` +
+                          `</div>\n\n`;
+            }
         } else {
             brokenCount++;
             console.log(`  -> 🚨 [다이어그램 복구 실패] 플레이스홀더로 대체. (누적 ${brokenCount}개)`);
-            const placeholder = `\n\n> ⚠️ **[다이어그램 렌더링 실패]** Mermaid 파싱 오류로 인해 이 다이어그램을 표시할 수 없습니다.\n\n`;
-            mdText  += placeholder;
-            pdfText += placeholder;
+            mdText += `\n\n> ⚠️ **[다이어그램 렌더링 실패]** Mermaid 파싱 오류로 인해 이 다이어그램을 표시할 수 없습니다.\n\n`;
         }
 
         lastIndex = match.index + match[0].length;
     }
 
-    const remaining = reportText.substring(lastIndex);
-    mdText  += remaining;
-    pdfText += remaining;
+    mdText += reportText.substring(lastIndex);
 
-    return { mdText, pdfText, brokenCount };
+    return { mdText, brokenCount };
 }
 
 
@@ -568,49 +684,267 @@ function buildHtmlReport(gameTitle, bodyHtml) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${gameTitle} 역기획서</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --primary:   #4F46E5;
-            --bg:        #F3F4F6;
-            --card-bg:   #FFFFFF;
-            --text-main: #1F2937;
-            --border:    #E5E7EB;
+            --primary:    #4F46E5;
+            --primary-lt: #EEF2FF;
+            --primary-dk: #3730A3;
+            --accent:     #06B6D4;
+            --bg:         #F8FAFC;
+            --card:       #FFFFFF;
+            --text:       #1E293B;
+            --text-muted: #64748B;
+            --border:     #E2E8F0;
+            --radius:     12px;
+            --shadow:     0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
         }
 
-        body             { font-family: 'Pretendard', -apple-system, sans-serif; background-color: var(--bg); color: var(--text-main); line-height: 1.75; margin: 0; padding: 40px 20px; }
-        .report-container{ max-width: 900px; margin: 0 auto; background: var(--card-bg); padding: 50px 70px; border-radius: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1), 0 10px 10px -5px rgba(0,0,0,.04); }
+        body {
+            font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.8;
+            padding: 32px 16px 64px;
+            font-size: 15px;
+            word-break: keep-all;
+            overflow-wrap: break-word;
+        }
 
-        h1          { font-size: 2.4em; font-weight: 800; color: #111827; border-bottom: 4px solid var(--primary); padding-bottom: 15px; margin-bottom: 30px; letter-spacing: -0.02em; }
-        h2          { font-size: 1.6em; font-weight: 700; color: var(--primary); margin-top: 2.5em; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        h3          { font-size: 1.3em; font-weight: 600; color: #374151; margin-top: 1.8em; }
-        blockquote  { background: #EEF2FF; border-left: 5px solid var(--primary); padding: 20px; margin: 25px 0; border-radius: 0 12px 12px 0; color: #4338CA; font-weight: 500; font-size: 1.05em; }
+        /* ── 레이아웃 ─────────────────────────────────────────────────── */
+        .report-container {
+            max-width: 860px;
+            margin: 0 auto;
+            background: var(--card);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
 
-        table       { width: 100%; border-collapse: separate; border-spacing: 0; margin: 30px 0; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,.05); table-layout: auto; }
-        th          { background-color: #F9FAFB; padding: 16px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); color: #374151; word-break: keep-all; }
-        td          { padding: 16px; border-bottom: 1px solid var(--border); word-break: keep-all; overflow-wrap: anywhere; }
+        .report-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dk) 100%);
+            padding: 40px 48px 36px;
+            color: #fff;
+        }
+        .report-header h1 {
+            font-size: 1.8em;
+            font-weight: 800;
+            color: #fff;
+            border: none;
+            margin: 0 0 16px;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+        }
+        .report-header blockquote {
+            background: rgba(255,255,255,.15);
+            border-left: 3px solid rgba(255,255,255,.6);
+            color: rgba(255,255,255,.9);
+            font-size: 0.875em;
+            padding: 10px 16px;
+            margin: 6px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        /* 헤더 구역 이후 본문 */
+        .report-body { padding: 40px 48px 48px; }
+
+        /* ── 제목 ─────────────────────────────────────────────────────── */
+        h1 {
+            font-size: 1.6em; font-weight: 800; color: #0F172A;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 10px; margin: 36px 0 16px;
+            letter-spacing: -0.02em;
+        }
+        h2 {
+            font-size: 1.2em; font-weight: 700; color: var(--primary);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px; margin: 28px 0 12px;
+        }
+        h3 {
+            font-size: 1.05em; font-weight: 700; color: #334155;
+            margin: 20px 0 8px;
+        }
+        h4 { font-size: 0.95em; font-weight: 600; color: #475569; margin: 14px 0 6px; }
+
+        /* ── 본문 요소 ────────────────────────────────────────────────── */
+        p  { margin: 10px 0; }
+        hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+
+        ul, ol { padding-left: 24px; margin: 10px 0; }
+        li { margin: 4px 0; }
+        li > ul, li > ol { margin: 4px 0; }
+
+        blockquote {
+            background: var(--primary-lt);
+            border-left: 4px solid var(--primary);
+            padding: 14px 18px;
+            margin: 18px 0;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            color: var(--primary-dk);
+            font-weight: 500;
+            font-size: 0.93em;
+        }
+
+        strong { color: #0F172A; }
+        em     { color: var(--text-muted); font-style: italic; }
+
+        /* ── 코드 ─────────────────────────────────────────────────────── */
+        code {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.84em;
+            background: #FDF4FF;
+            color: #BE185D;
+            padding: 2px 6px;
+            border-radius: 5px;
+            border: 1px solid #FBCFE8;
+            word-break: break-all;
+        }
+        pre {
+            background: #0F172A;
+            color: #E2E8F0;
+            padding: 20px;
+            border-radius: var(--radius);
+            overflow-x: auto;
+            margin: 16px 0;
+            font-size: 0.82em;
+            line-height: 1.6;
+            -webkit-overflow-scrolling: touch;
+        }
+        pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+            border: none;
+            font-size: 1em;
+            word-break: normal;
+        }
+
+        /* ── 표 ───────────────────────────────────────────────────────── */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 20px 0;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0,0,0,.04);
+            -webkit-overflow-scrolling: touch;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875em;
+            min-width: 400px;
+        }
+        th {
+            background: #F8FAFC;
+            font-weight: 700;
+            color: #0F172A;
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        td {
+            padding: 11px 16px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
         tr:last-child td { border-bottom: none; }
+        tbody tr:hover   { background: #F8FAFC; }
 
-        pre         { background: #1E293B; color: #F8FAFC; padding: 20px; border-radius: 12px; overflow-x: auto; margin: 20px 0; white-space: pre-wrap; word-break: break-all; }
-        code        { font-family: monospace; font-size: 0.9em; background: #F1F5F9; color: #E11D48; padding: 4px 8px; border-radius: 6px; word-break: break-all; }
-        pre code    { background: transparent; color: inherit; padding: 0; }
+        /* ── 다이어그램 ───────────────────────────────────────────────── */
+        .diagram-wrap {
+            text-align: center;
+            margin: 24px 0;
+            padding: 20px;
+            background: #FAFAFA;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .diagram-wrap img {
+            max-width: 100%;
+            height: auto;
+            display: inline-block;
+        }
 
-        img         { display: block; margin: 40px auto; max-width: 100% !important; height: auto !important; object-fit: contain; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,.1); }
-        hr          { border: 0; height: 1px; background: var(--border); margin: 40px 0; }
+        /* ── 이미지 ───────────────────────────────────────────────────── */
+        img:not(.diagram-wrap img) {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 20px auto;
+            border-radius: var(--radius);
+        }
 
-        @media (max-width: 768px) {
-            body              { padding: 15px 10px; }
-            .report-container { padding: 30px 20px; border-radius: 16px; }
-            h1                { font-size: 1.8em; }
-            h2                { font-size: 1.4em; }
+        /* ── 모바일 ───────────────────────────────────────────────────── */
+        @media (max-width: 640px) {
+            body { padding: 0 0 48px; font-size: 14px; }
+            .report-header  { padding: 28px 20px 24px; }
+            .report-body    { padding: 24px 20px 32px; }
+            .report-header h1 { font-size: 1.4em; }
+            h1 { font-size: 1.3em; }
+            h2 { font-size: 1.1em; }
+            pre { padding: 14px; font-size: 0.78em; }
+            th, td { padding: 9px 12px; }
+        }
+
+        @media (max-width: 400px) {
+            .report-header h1 { font-size: 1.2em; }
+            body { font-size: 13px; }
         }
     </style>
 </head>
 <body>
     <div class="report-container">
-        ${bodyHtml}
+        <div id="report-content">
+            ${bodyHtml}
+        </div>
     </div>
+    <script>
+        // 첫 번째 h1 + 그 뒤 blockquote들을 헤더 영역으로 분리
+        (function () {
+            const container = document.getElementById('report-content');
+            const firstH1   = container.querySelector('h1');
+            if (!firstH1) return;
+
+            const header = document.createElement('div');
+            header.className = 'report-header';
+            const body   = document.createElement('div');
+            body.className   = 'report-body';
+
+            // 노드를 직접 이동 (중복 DOM 방지, 메모리 효율)
+            header.appendChild(firstH1);
+            let node = container.firstElementChild;
+            while (node) {
+                const next = node.nextElementSibling;
+                if (node.tagName === 'BLOCKQUOTE') {
+                    header.appendChild(node);
+                } else if (node.tagName !== 'HR') {
+                    body.appendChild(node);
+                } else {
+                    node.remove(); // HR은 헤더 구분선 역할이 끝났으므로 제거
+                }
+                node = next;
+            }
+
+            // 표를 .table-wrap으로 감싸기
+            body.querySelectorAll('table').forEach(tbl => {
+                const wrap = document.createElement('div');
+                wrap.className = 'table-wrap';
+                tbl.parentNode.insertBefore(wrap, tbl);
+                wrap.appendChild(tbl);
+            });
+
+            container.appendChild(header);
+            container.appendChild(body);
+        })();
+    </script>
 </body>
 </html>`;
 }
@@ -882,6 +1216,7 @@ async function main() {
 
             let factSheet    = '';
             let scoutAborted = false;
+            let scoutFormatFallback = false; // 모든 회차가 형식 실패 → Writer 자체 딥서치로 진행
             const scoutLabels = ['공식 가이드', '나무위키', '커뮤니티'];
 
             for (let sAttempt = 1; sAttempt <= MAX_SCOUT_RETRIES; sAttempt++) {
@@ -916,6 +1251,30 @@ async function main() {
                         continue;
                     }
 
+                    // ── Q1: 형식 검증 ─────────────────────────────────────────────
+                    // [시스템명] 태그 없으면 Writer가 팩트 사전으로 쓸 수 없음.
+                    // 다음 회차가 남아 있으면 계속 시도. 마지막 회차이면 폴백 플래그 세우고 루프 종료.
+                    if (!scoutText.includes('[시스템명]')) {
+                        if (sAttempt < MAX_SCOUT_RETRIES) {
+                            console.log(`  -> ⚠️  [SCOUT-FORMAT ${sAttempt}회] 형식 불일치 ([시스템명] 누락). 다음 회차로.`);
+                            continue;
+                        } else {
+                            console.log(`  -> ⚠️  [SCOUT-FORMAT ${sAttempt}회] 형식 불일치. 전 회차 실패 → Writer 자체 딥서치로 진행.`);
+                            scoutFormatFallback = true;
+                            break;
+                        }
+                    }
+
+                    // ── Q2: Scout-Writer 사이 appId 교차 확인 ────────────────────
+                    // factSheet 안에 타겟 게임 title 또는 appId가 있어야 정상.
+                    // 없다는 건 완전히 다른 게임 정보가 섞인 것 → 다음 회차로.
+                    const titleInSheet = scoutText.includes(game.title);
+                    const appIdInSheet = scoutText.includes(game.appId);
+                    if (!titleInSheet && !appIdInSheet) {
+                        console.log(`  -> ⚠️  [SCOUT-CROSS ${sAttempt}회] factSheet에 타겟 게임 식별자 없음 (IP 오염 의심). 다음 회차로.`);
+                        continue;
+                    }
+
                     factSheet = scoutText;
                     console.log(`  -> ✅ [SCOUT-OK] 완료 (신뢰도: ${trust}, ${sAttempt}회차)`);
                     break;
@@ -925,13 +1284,21 @@ async function main() {
                 }
             }
 
-            if (scoutAborted || !factSheet) {
-                const reason = scoutAborted ? 'ABORT_NO_DATA' : `${MAX_SCOUT_RETRIES}회 전부 URL/신뢰도 미달`;
-                const errMsg = `[${rank}위] ${game.title} — Scout 실패 (${reason})`;
+            // ── Scout 결과 판단 ────────────────────────────────────────────────
+            // ABORTED: 데이터 자체가 없는 게임 → 스킵
+            // factSheet 있음: 정상 경로 → Writer에 팩트 사전 주입
+            // scoutFormatFallback / factSheet 없음: 형식 실패 또는 전회차 URL/신뢰도 미달
+            //   → ABORT 아님. Writer가 자체 딥서치로 진행 (buildAnalysisPrompt에 factSheet='')
+            if (scoutAborted) {
+                const errMsg = `[${rank}위] ${game.title} — Scout ABORT_NO_DATA`;
                 console.error(`  -> ❌ [SCOUT-ABORT] ${errMsg}`);
                 errorLog.push(errMsg);
                 stats.skipped++;
                 continue;
+            }
+            if (!factSheet) {
+                const reason = scoutFormatFallback ? '형식 불일치 전 회차 실패' : `${MAX_SCOUT_RETRIES}회 URL/신뢰도/교차확인 미달`;
+                console.log(`  -> ℹ️  [SCOUT-FALLBACK] ${reason} → Writer 자체 딥서치로 진행`);
             }
 
             // 4-4. 역기획서 초안 생성
@@ -940,6 +1307,22 @@ async function main() {
             if (!reportRaw) {
                 const errMsg = `[${rank}위] ${game.title} — Draft 생성 ${MAX_DRAFT_RETRIES}회 실패`;
                 console.error(`  -> ❌ ${errMsg}`);
+                errorLog.push(errMsg);
+                stats.skipped++;
+                continue;
+            }
+
+            // Writer가 직접 판단한 중단 신호 체크
+            if (reportRaw.includes('[ABORT_NO_DATA]')) {
+                const errMsg = `[${rank}위] ${game.title} — Writer ABORT_NO_DATA`;
+                console.log(`  -> ⏭️  ${errMsg}`);
+                errorLog.push(errMsg);
+                stats.skipped++;
+                continue;
+            }
+            if (reportRaw.includes('[IP_CONFUSED]')) {
+                const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED`;
+                console.log(`  -> ⏭️  ${errMsg}`);
                 errorLog.push(errMsg);
                 stats.skipped++;
                 continue;
@@ -983,19 +1366,19 @@ async function main() {
                 reportText,
             ].join('\n');
 
-            // 4-6. Mermaid 블록 처리
-            const { mdText, pdfText, brokenCount } = await processMermaidBlocks(reportText, qaModel);
+            // 4-6. Mermaid 블록 처리 (```mermaid → Base64 img 태그로 치환된 mdText 반환)
+            const { mdText, brokenCount } = await processMermaidBlocks(reportText, qaModel);
             if (brokenCount > 0) stats.diagram++;
 
             // 4-7. 파일명 생성
             const safeTitle    = game.title.replace(/[/\\?%*:|"<>]/g, '_');
             const baseFileName = `[${dateString}]_${String(rank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
 
-            // 4-8. MD / PDF / HTML 저장
+            // 4-8. MD / PDF / HTML 저장 (세 포맷 모두 mdText 단일 소스에서 파생)
             const uploads = [
-                { tag: 'MD',   ext: '.md',   folderId: mdFolderId,   mimeType: 'text/markdown',   content: mdText,                        validate: () => mdText.length >= 10 },
-                { tag: 'PDF',  ext: '.pdf',  folderId: pdfFolderId,  mimeType: 'application/pdf', content: null,                          validate: null },
-                { tag: 'HTML', ext: '.html', folderId: htmlFolderId, mimeType: 'text/html',        content: null,                          validate: null },
+                { tag: 'MD',   ext: '.md',   folderId: mdFolderId,   mimeType: 'text/markdown',   content: mdText, validate: () => mdText.length >= 10 },
+                { tag: 'PDF',  ext: '.pdf',  folderId: pdfFolderId,  mimeType: 'application/pdf', content: null,   validate: null },
+                { tag: 'HTML', ext: '.html', folderId: htmlFolderId, mimeType: 'text/html',        content: null,   validate: null },
             ];
 
             let savedCount = 0;
@@ -1005,12 +1388,12 @@ async function main() {
                     let content = u.content;
                     if (u.tag === 'PDF') {
                         console.log(`  -> 📄 [PDF]  변환 시작...`);
-                        const pdfData = await mdToPdf({ content: pdfText }, PDF_OPTIONS);
+                        const pdfData = await mdToPdf({ content: mdText }, PDF_OPTIONS);
                         if (!pdfData?.content) throw new Error('PDF 엔진이 빈 데이터를 반환했습니다.');
                         content = pdfData.content;
                     } else if (u.tag === 'HTML') {
                         console.log(`  -> 🌐 [HTML] 변환 시작...`);
-                        const parsedBody = marked.parse(pdfText);
+                        const parsedBody = marked.parse(mdText);
                         if (!parsedBody?.trim()) throw new Error('HTML 파싱 결과가 비어있습니다.');
                         content = buildHtmlReport(game.title, parsedBody);
                     } else if (u.validate && !u.validate()) {
@@ -1018,8 +1401,12 @@ async function main() {
                     }
 
                     const saved = await uploadToDrive({ fileName: `${baseFileName}${u.ext}`, folderId: u.folderId, mimeType: u.mimeType, content });
-                    if (saved) { console.log(`  -> 💾 [${u.tag.padEnd(4)}] 저장 완료`); savedCount++; }
-                    else       { savedCount++; } // SKIP도 성공으로 집계
+                    if (saved) {
+                        console.log(`  -> 💾 [${u.tag.padEnd(4)}] 저장 완료`);
+                    } else {
+                        console.log(`  -> ⏭️  [${u.tag.padEnd(4)}] 이미 존재 (SKIP)`);
+                    }
+                    savedCount++; // 신규 저장·SKIP 모두 성공으로 집계 (멱등성 보장)
                 } catch (e) {
                     console.error(`  -> ❌ [${u.tag.padEnd(4)}] 저장 실패: ${e.message}`);
                     errorLog.push(`[${u.tag}] ${baseFileName}: ${e.message}`);
