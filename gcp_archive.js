@@ -1335,14 +1335,13 @@ async function main() {
             const rank     = game.actualRank;
             const progress = `[${idx + 1}/${targetGames.length}]`;
 
-            // 4-1. 앱 출시일 수집
-            let releaseDate = '정보 없음';
-            try {
-                const detail = await gplay.app({ appId: game.appId });
-                releaseDate  = detail.released || '정보 없음';
-            } catch {
-                console.log(`  -> ⚠️  출시일 수집 실패`);
-            }
+            // 4-1. 앱 상세 정보 수집 (출시일 + 스토어 설명 + 최근 업데이트)
+            // gplay.list()가 성공한 시점이므로 gplay.app() 실패는 현실적으로 없음.
+            // 실패 시 어차피 fatalError로 파이프라인 중단이 맞는 동작.
+            const detail         = await gplay.app({ appId: game.appId });
+            const releaseDate    = detail.released      || '정보 없음';
+            const appDescription   = detail.description   || '';
+            const appRecentChanges = detail.recentChanges || '';
 
             // 4-2. Gemini 모델 초기화 (Round-Robin 키 순환)
             const genAI                          = new GoogleGenerativeAI(apiKeyQueue.next());
@@ -1542,47 +1541,47 @@ async function main() {
                 `date: "${dateString}"`,
                 `rank: ${rank}`,
                 `app_id: "${game.appId}"`,
-                `developer: "${game.developer}"`,
-                `developer_id: "${game.developerId || ''}"`,
+                `developer: "${detail.developer     || game.developer}"`,
+                `developer_id: "${detail.developerId  || ''}"`,
                 `release_date: "${releaseDate}"`,
-                `updated: "${game.updated ? new Date(game.updated * 1000).toISOString().slice(0, 10) : ''}"`,
-                `version: "${game.version || ''}"`,
+                `updated: "${detail.updated ? new Date(detail.updated * 1000).toISOString().slice(0, 10) : ''}"`,
+                `version: "${detail.version         || ''}"`,
                 `category: "${category}"`,
                 `category_code: "${categoryCode}"`,
                 `core_system: "${coreSystemName}"`,
-                `genre: "${game.genre || ''}"`,
-                `genre_id: "${game.genreId || ''}"`,
-                `content_rating: "${game.contentRating || ''}"`,
-                `score: ${game.score || 0}`,
-                `ratings: ${game.ratings || 0}`,
-                `reviews: ${game.reviews || 0}`,
-                `installs: "${game.installs || ''}"`,
-                `min_installs: ${game.minInstalls || 0}`,
-                `free: ${game.free ?? true}`,
-                `price: ${game.price || 0}`,
-                `price_text: "${game.priceText || '무료'}"`,
-                `ad_supported: ${game.adSupported ?? false}`,
-                `offers_iap: ${game.offersIAP ?? false}`,
-                `iap_range: "${game.IAPRange || ''}"`,
-                `android_version: "${game.androidVersion || ''}"`,
-                `summary: "${(game.summary || '').replace(/"/g, "'")}"`,
+                `genre: "${detail.genre             || ''}"`,
+                `genre_id: "${detail.genreId        || ''}"`,
+                `content_rating: "${detail.contentRating || ''}"`,
+                `score: ${detail.score              || 0}`,
+                `ratings: ${detail.ratings          || 0}`,
+                `reviews: ${detail.reviews          || 0}`,
+                `installs: "${detail.installs        || ''}"`,
+                `min_installs: ${detail.minInstalls  || 0}`,
+                `free: ${detail.free                ?? true}`,
+                `price: ${detail.price              || 0}`,
+                `price_text: "${detail.priceText    || '무료'}"`,
+                `ad_supported: ${detail.adSupported  ?? false}`,
+                `offers_iap: ${detail.offersIAP      ?? false}`,
+                `iap_range: "${detail.IAPRange       || ''}"`,
+                `android_version: "${detail.androidVersion || ''}"`,
+                `summary: "${(detail.summary        || '').replace(/"/g, "'")}"`,
                 '---',
                 '',
                 // 스토어 설명 — YAML에 넣으면 깨지므로 본문 첫 섹션으로 분리
                 // LLM이 게임의 공식 소개 텍스트를 컨텍스트로 학습할 수 있음
-                ...(game.description ? [
+                ...(appDescription ? [
                     '## 스토어 설명 (Google Play 공식)',
                     '',
-                    game.description.replace(/\r\n/g, '\n').trim(),
+                    appDescription.replace(/\r\n/g, '\n').trim(),
                     '',
                     '---',
                     '',
                 ] : []),
                 // 최근 업데이트 내역 — 라이브 옵스·이벤트 패턴 학습에 유용
-                ...(game.recentChanges ? [
+                ...(appRecentChanges ? [
                     '## 최근 업데이트 내역',
                     '',
-                    game.recentChanges.replace(/\r\n/g, '\n').trim(),
+                    appRecentChanges.replace(/\r\n/g, '\n').trim(),
                     '',
                     '---',
                     '',
