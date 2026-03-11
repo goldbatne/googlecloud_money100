@@ -60,6 +60,29 @@ const ANALYSIS_CATEGORIES = [
     '온보딩 및 튜토리얼 (초반 동선/가이드 로직/이탈 방지 장치)',
 ];
 
+// Fisher-Yates 셔플 후 순환 — 14게임마다 모든 카테고리 균등 커버
+// Math.random() 방식 대비 최대-최소 편차를 1 이내로 유지
+const _categoryQueue = (() => {
+    const arr = [...ANALYSIS_CATEGORIES];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+})();
+let _categoryIdx = 0;
+function pickCategory() {
+    if (_categoryIdx >= _categoryQueue.length) {
+        // 한 바퀴 완료 → 재셔플
+        for (let i = _categoryQueue.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [_categoryQueue[i], _categoryQueue[j]] = [_categoryQueue[j], _categoryQueue[i]];
+        }
+        _categoryIdx = 0;
+    }
+    return _categoryQueue[_categoryIdx++];
+}
+
 // PDF 변환 옵션 (md-to-pdf / Puppeteer 기반)
 // --max-old-space-size: 50회 루프 시 Puppeteer OOM 방지
 // --font-render-hinting=none: GitHub Actions 환경 한글 폰트 렌더링 안정화
@@ -591,15 +614,12 @@ function sanitizeMermaid(rawCode) {
 //    2단계 QA Agent:   실패 시 Gemini 재작성 요청 → 최대 5회
 //  최종 실패 블록은 ⚠️ 플레이스홀더로 대체하고 나머지 리포트는 정상 저장
 //
-//  출력: mdText 단일 스트림
-//    - 성공 블록: ```mermaid 자리를 Base64 인라인 SVG img 태그로 치환
-//      → md-to-pdf(PDF)와 marked(HTML) 모두 img 태그를 그대로 통과시킴
-//      → 외부 URL fetch 없이 렌더링 (GitHub Actions sandbox 환경 대응)
-//    - 실패 블록: ⚠️ 플레이스홀더 삽입
-//  PDF·HTML 모두 이 mdText 하나를 소스로 변환하므로 별도 스트림 불필요
+//  mode 파라미터:
+//    'pdf'  → Base64 인라인 SVG img 태그 (PDF 렌더링용, 외부 fetch 없음)
+//    'html' → Kroki URL img 태그 (HTML 경량화, 파일 크기 절감)
 // =============================================================================
 
-async function processMermaidBlocks(reportText, qaModel) {
+async function processMermaidBlocks(reportText, qaModel, mode = 'pdf') {
     const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)```/gi;
     let mdText      = '';
     let lastIndex   = 0;
@@ -668,18 +688,26 @@ ${currentMermaid}`;
 
         // ── 결과 반영 ────────────────────────────────────────────────────
         if (fixedMermaid) {
-            // cachedSvg: Fast-Track 검증 시 이미 받은 SVG → 재사용해 Kroki 요청 절약
-            // cachedSvg 없음(QA Agent 경로): 새로 fetch. 실패 시 URL 방식 폴백.
-            try {
-                const svgStr = cachedSvg ?? await fetch(buildKrokiUrl(fixedMermaid)).then(r => r.text());
-                const b64    = Buffer.from(svgStr).toString('base64');
-                mdText += `\n\n<div class="diagram-wrap">` +
-                          `<img src="data:image/svg+xml;base64,${b64}" alt="시스템 다이어그램" />` +
-                          `</div>\n\n`;
-            } catch {
+            if (mode === 'html') {
+                // HTML: Kroki URL 방식 — 외부 CDN 참조, 파일 크기 절감
                 mdText += `\n\n<div class="diagram-wrap">` +
                           `<img src="${buildKrokiUrl(fixedMermaid)}" alt="시스템 다이어그램" />` +
                           `</div>\n\n`;
+            } else {
+                // PDF(기본): Base64 인라인 SVG — 외부 URL fetch 불필요, 오프라인 렌더링
+                // cachedSvg: Fast-Track 검증 시 이미 받은 SVG → 재사용해 Kroki 요청 절약
+                try {
+                    const svgStr = cachedSvg ?? await fetch(buildKrokiUrl(fixedMermaid)).then(r => r.text());
+                    const b64    = Buffer.from(svgStr).toString('base64');
+                    mdText += `\n\n<div class="diagram-wrap">` +
+                              `<img src="data:image/svg+xml;base64,${b64}" alt="시스템 다이어그램" />` +
+                              `</div>\n\n`;
+                } catch {
+                    // Base64 fetch 실패 시 URL 폴백
+                    mdText += `\n\n<div class="diagram-wrap">` +
+                              `<img src="${buildKrokiUrl(fixedMermaid)}" alt="시스템 다이어그램" />` +
+                              `</div>\n\n`;
+                }
             }
         } else {
             brokenCount++;
@@ -1293,7 +1321,10 @@ async function main() {
         const targetGames = allGames.slice(START_RANK - 1, END_RANK);
         console.log(`\n[${dateString}] 🗄️  파이프라인 가동 (${START_RANK}위 ~ ${END_RANK}위, 총 ${targetGames.length}개)`);
 
-        const stats = { full: 0, partial: 0, skipped: 0, diagram: 0 };
+        const stats = {
+            full: 0, partial: 0, skipped: 0, diagram: 0,
+            scoutOk: 0, scoutFallback: 0, scoutCross: 0, scoutAbort: 0,
+        };
 
         // ── 4. 게임별 분석 문서 생성 루프 ────────────────────────────────────
         for (let idx = 0; idx < targetGames.length; idx++) {
@@ -1314,7 +1345,7 @@ async function main() {
             const genAI                          = new GoogleGenerativeAI(apiKeyQueue.next());
             const { scoutModel, draftModel, qaModel } = initModels(genAI, game.title, game.appId);
 
-            const category = ANALYSIS_CATEGORIES[Math.floor(Math.random() * ANALYSIS_CATEGORIES.length)];
+            const category = pickCategory();
             console.log(`\n${progress} 매출 ${rank}위: ${game.title}`);
             console.log(`  -> 🎯 분석 영역: [${category}] / 출시일: ${releaseDate}`);
 
@@ -1382,6 +1413,7 @@ async function main() {
                     const appIdInSheet = scoutText.includes(game.appId);
                     if (!titleInSheet && !appIdInSheet) {
                         console.log(`  -> ⚠️  [SCOUT-CROSS ${sAttempt}회] factSheet에 타겟 게임 식별자 없음 (IP 오염 의심). 다음 회차로.`);
+                        stats.scoutCross++;
                         continue;
                     }
 
@@ -1395,20 +1427,20 @@ async function main() {
             }
 
             // ── Scout 결과 판단 ────────────────────────────────────────────────
-            // ABORTED: 데이터 자체가 없는 게임 → 스킵
-            // factSheet 있음: 정상 경로 → Writer에 팩트 사전 주입
-            // scoutFormatFallback / factSheet 없음: 형식 실패 또는 전회차 URL/신뢰도 미달
-            //   → ABORT 아님. Writer가 자체 딥서치로 진행 (buildAnalysisPrompt에 factSheet='')
             if (scoutAborted) {
                 const errMsg = `[${rank}위] ${game.title} — Scout ABORT_NO_DATA`;
                 console.error(`  -> ❌ [SCOUT-ABORT] ${errMsg}`);
                 errorLog.push(errMsg);
+                stats.scoutAbort++;
                 stats.skipped++;
                 continue;
             }
             if (!factSheet) {
                 const reason = scoutFormatFallback ? '형식 불일치 전 회차 실패' : `${MAX_SCOUT_RETRIES}회 URL/신뢰도/교차확인 미달`;
                 console.log(`  -> ℹ️  [SCOUT-FALLBACK] ${reason} → Writer 자체 딥서치로 진행`);
+                stats.scoutFallback++;
+            } else {
+                stats.scoutOk++;
             }
 
             // 4-4. 분석 문서 초안 생성
@@ -1431,15 +1463,32 @@ async function main() {
                 continue;
             }
             if (reportRaw.includes('[IP_CONFUSED]')) {
-                const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED`;
-                console.log(`  -> ⏭️  ${errMsg}`);
-                errorLog.push(errMsg);
-                stats.skipped++;
-                continue;
+                // factSheet 주입 상태였다면 제거 후 순수 딥서치로 1회 재시도
+                if (factSheet) {
+                    console.log(`  -> ⚠️  [WRITER-IP] IP_CONFUSED — factSheet 제거 후 딥서치 재시도...`);
+                    const retryRaw = await callGeminiWithRetry(draftModel, buildAnalysisPrompt(game, rank, category, ''), MAX_DRAFT_RETRIES);
+                    if (retryRaw && !retryRaw.includes('[IP_CONFUSED]') && !retryRaw.includes('[ABORT_NO_DATA]')) {
+                        console.log(`  -> ✅ [WRITER-IP] 딥서치 재시도 성공`);
+                        var finalReportRaw = retryRaw;
+                    } else {
+                        const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED (재시도 후에도 실패)`;
+                        console.log(`  -> ⏭️  ${errMsg}`);
+                        errorLog.push(errMsg);
+                        stats.skipped++;
+                        continue;
+                    }
+                } else {
+                    const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED`;
+                    console.log(`  -> ⏭️  ${errMsg}`);
+                    errorLog.push(errMsg);
+                    stats.skipped++;
+                    continue;
+                }
             }
 
             // 4-5. 리포트 텍스트 정제
-            let reportText = reportRaw
+            const effectiveReport = (typeof finalReportRaw !== 'undefined') ? finalReportRaw : reportRaw;
+            let reportText = effectiveReport
                 .replace(/^```(markdown|md)?/i, '')
                 .replace(/```$/i, '')
                 .trim();
@@ -1456,19 +1505,58 @@ async function main() {
                 ? systemMatch[1].replace(/\[\/META\]/gi, '').replace(/[/\\?%*:|"<>]/g, '_').trim()
                 : '시스템_통합_분석';
 
-            // 메타데이터 줄 제거 후 헤더 붙이기
+            // 카테고리 축약 코드 (파일명 + frontmatter용)
+            const CATEGORY_CODE = {
+                '핵심 BM (가챠/강화/패스 등 직접적 매출원)':                   'BM',
+                '장기 리텐션 (일일 숙제/업적/마일리지 등 접속 유지 장치)':     'RET',
+                '소셜 및 경쟁 (길드/PvP/랭킹 등 유저 간 상호작용)':           'SOC',
+                '성장 및 경제 (재화 획득/소모처 및 인플레이션 제어 로직)':     'ECO',
+                '코어 게임플레이 (전투 공식/스테이지 기믹/퍼즐 등 조작의 재미)': 'CORE',
+                '캐릭터 및 전투 클래스 (스킬 메커니즘/시너지/상성 구조)':     'CHAR',
+                '수치 및 전투 밸런스 (데미지 공식/스테이터스/성장 체감)':     'BAL',
+                '레벨 디자인 (맵 구조/동선/오브젝트 배치/몬스터 스폰)':       'LVL',
+                '세계관 및 시나리오 (퀘스트 라인/내러티브/NPC 상호작용)':     'STORY',
+                '핵심 콘텐츠 시스템 (레이드/던전/생활형 콘텐츠 등 주요 시스템)': 'CONT',
+                'UI/UX 및 편의성 설계 (HUD 배치/메뉴 뎁스/단축키/조작감)':   'UX',
+                '라이브 옵스 및 이벤트 기획 (시즌 이벤트/픽업 로테이션/출석부)': 'LIVE',
+                '메타 게임 및 서브 콘텐츠 (도감 수집/하우징/미니게임/꾸미기)': 'META',
+                '온보딩 및 튜토리얼 (초반 동선/가이드 로직/이탈 방지 장치)':  'ONBD',
+            };
+            const categoryCode = CATEGORY_CODE[category] || 'ETC';
+
+            // 메타데이터 줄 제거 (파일명용 시스템명은 이미 추출 완료)
             reportText = reportText
                 .replace(/메인장르:.*?\n/g, '')
                 .replace(/서브장르:.*?\n/g, '')
                 .replace(/시스템:.*?\n/g,   '')
                 .trim();
 
-            reportText = [
+            // ── MD 전용: YAML frontmatter + 순수 텍스트 본문 ────────────────
+            // LLM 학습용. SVG/Base64 없음. Mermaid 코드블록 원본 유지.
+            const mdLlmText = [
+                '---',
+                `title: "${game.title} 분석 문서"`,
+                `date: "${dateString}"`,
+                `rank: ${rank}`,
+                `app_id: "${game.appId}"`,
+                `developer: "${game.developer}"`,
+                `release_date: "${releaseDate}"`,
+                `category: "${category}"`,
+                `category_code: "${categoryCode}"`,
+                `core_system: "${coreSystemName}"`,
+                '---',
+                '',
+                reportText,
+            ].join('\n');
+
+            // ── PDF/HTML 전용: blockquote 헤더 + Mermaid → SVG 치환 ─────────
+            // 사람이 읽는 시각화 문서용.
+            const reportTextForVisual = [
                 `# [${rank}위] ${game.title} 분석 문서`,
-                `> **분석 타겟:** ${category}`,
+                `> **분석 카테고리:** ${category}`,
                 `> **핵심 시스템:** ${coreSystemName}`,
                 `> **개발사:** ${game.developer}`,
-                `> **작성일:** ${dateString}`,
+                `> **매출 순위:** ${rank}위 (${dateString} 기준)`,
                 `> **출시일:** ${releaseDate}`,
                 '',
                 '---',
@@ -1476,19 +1564,25 @@ async function main() {
                 reportText,
             ].join('\n');
 
-            // 4-6. Mermaid 블록 처리 (```mermaid → Base64 img 태그로 치환된 mdText 반환)
-            const { mdText, brokenCount } = await processMermaidBlocks(reportText, qaModel);
+            // 4-6. Mermaid 블록 처리 — PDF/HTML용 소스에만 적용 (mode별 분리)
+            // mdLlmText는 Mermaid 코드블록 원본 유지 (LLM 학습 노이즈 방지)
+            // PDF: Base64 인라인 SVG (오프라인 렌더링, GitHub Actions sandbox 대응)
+            // HTML: Kroki URL (경량화, 외부 공유 최적화)
+            const { mdText: pdfMdText, brokenCount }  = await processMermaidBlocks(reportTextForVisual, qaModel, 'pdf');
+            const { mdText: htmlMdText }               = await processMermaidBlocks(reportTextForVisual, qaModel, 'html');
             if (brokenCount > 0) stats.diagram++;
 
-            // 4-7. 파일명 생성
+            // 4-7. 파일명 생성 (카테고리 코드 포함)
             const safeTitle    = game.title.replace(/[/\\?%*:|"<>]/g, '_');
-            const baseFileName = `[${dateString}]_${String(rank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})`;
+            const baseFileName = `[${dateString}]_${String(rank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})_[${categoryCode}]`;
 
-            // 4-8. MD / PDF / HTML 저장 (세 포맷 모두 mdText 단일 소스에서 파생)
+            // 4-8. MD / PDF / HTML 저장
+            // MD: mdLlmText (순수 텍스트 + YAML frontmatter, LLM 학습용)
+            // PDF/HTML: visualMdText (SVG 치환 완료, 사람이 읽는 시각화 문서)
             const uploads = [
-                { tag: 'MD',   ext: '.md',   folderId: mdFolderId,   mimeType: 'text/markdown',   content: mdText, validate: () => mdText.length >= 10 },
-                { tag: 'PDF',  ext: '.pdf',  folderId: pdfFolderId,  mimeType: 'application/pdf', content: null,   validate: null },
-                { tag: 'HTML', ext: '.html', folderId: htmlFolderId, mimeType: 'text/html',        content: null,   validate: null },
+                { tag: 'MD',   ext: '.md',   folderId: mdFolderId,   mimeType: 'text/markdown',   content: mdLlmText,    validate: () => mdLlmText.length >= 10 },
+                { tag: 'PDF',  ext: '.pdf',  folderId: pdfFolderId,  mimeType: 'application/pdf', content: null,          validate: null },
+                { tag: 'HTML', ext: '.html', folderId: htmlFolderId, mimeType: 'text/html',        content: null,          validate: null },
             ];
 
             let savedCount = 0;
@@ -1498,10 +1592,10 @@ async function main() {
                     let content = u.content;
                     if (u.tag === 'PDF') {
                         console.log(`  -> 📄 [PDF]  변환 시작...`);
-                        content = await convertToPdf(mdText, PDF_OPTIONS);
+                        content = await convertToPdf(pdfMdText, PDF_OPTIONS);
                     } else if (u.tag === 'HTML') {
                         console.log(`  -> 🌐 [HTML] 변환 시작...`);
-                        const parsedBody = marked.parse(mdText);
+                        const parsedBody = marked.parse(htmlMdText);
                         if (!parsedBody?.trim()) throw new Error('HTML 파싱 결과가 비어있습니다.');
                         content = buildHtmlReport(game.title, parsedBody);
                     } else if (u.validate && !u.validate()) {
@@ -1539,9 +1633,39 @@ async function main() {
         console.log(`  다이어그램 일부 깨짐      ${stats.diagram}개  ← 리포트는 저장됨`);
         console.log(`  자동 스킵 (데이터 부족)  ${stats.skipped}개`);
         console.log(`  완전 실패                ${failedCount}개`);
+        console.log(`──────────────────────────────────────────────────────`);
+        console.log(`  Scout 성공 (factSheet)   ${stats.scoutOk}개`);
+        console.log(`  Scout FALLBACK (딥서치)  ${stats.scoutFallback}개`);
+        console.log(`  Scout CROSS (IP 오염)    ${stats.scoutCross}개`);
+        console.log(`  Scout ABORT (데이터 없음)${stats.scoutAbort}개`);
         console.log(`${'='.repeat(56)}`);
         console.log(`🎉 Google Drive 동기화 완료`);
         console.log(`${'='.repeat(56)}\n`);
+
+        // ── 6. Drive 실패 로그 파일 저장 ─────────────────────────────────────
+        if (errorLog.length > 0) {
+            try {
+                const logFileName  = `[${dateString}]_ERROR_LOG_rank${process.env.START_RANK || 1}-${process.env.END_RANK || 50}.txt`;
+                const logContent   = [
+                    `[${dateString}] 실패 로그 (rank ${process.env.START_RANK || 1}~${process.env.END_RANK || 50})`,
+                    `총 ${errorLog.length}건`,
+                    '='.repeat(56),
+                    ...errorLog,
+                ].join('\n');
+                const logDriveId = await uploadToDrive({
+                    fileName: logFileName,
+                    folderId: ROOT_FOLDER_ID,
+                    mimeType: 'text/plain',
+                    content:  Buffer.from(logContent, 'utf8'),
+                });
+                console.log(`📋 실패 로그 Drive 저장 완료: ${logFileName} (${logDriveId})`);
+            } catch (logErr) {
+                console.error(`⚠️  실패 로그 Drive 저장 실패: ${logErr.message}`);
+                // 로컬 출력으로라도 남김
+                console.error('=== ERROR LOG ===');
+                errorLog.forEach(e => console.error(e));
+            }
+        }
 
     } catch (fatalError) {
         console.error('💀 치명적 에러 발생:', fatalError);
