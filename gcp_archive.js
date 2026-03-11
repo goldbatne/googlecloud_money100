@@ -996,25 +996,29 @@ function buildScoutPrompt(game, attempt = 1) {
             return isKorean ? {
                 label: '공식 가이드·공홈·카페 — 국내 (1순위 출처)',
                 queries: [
+                    `${game.title} 공식 홈페이지`,
                     `${game.title} 공식 가이드 시스템 소개`,
                     `${game.title} ${game.developer} 공식 홈페이지 게임 소개 시스템`,
                     `${game.title} 네이버 공식카페 공략 시스템 재화`,
                 ],
                 instruction: `
 ## 이번 회차 핵심 지시
-개발사(${game.developer})가 공식적으로 배포한 가이드, 공식 홈페이지, 네이버 공식 카페에서만 명칭을 수집하십시오.
+개발사(${game.developer})가 공식적으로 배포한 공식 홈페이지, 가이드, 네이버 공식 카페에서만 명칭을 수집하십시오.
+공식 홈페이지를 최우선으로 확인하고, 시스템명·재화명이 UI 또는 공지에 표기된 그대로 수집하십시오.
 공식 출처에서 확인된 명칭만 [시스템명]·[재화명]에 기재하십시오.
 공식 출처 URL이 없으면 이번 회차는 실패로 처리됩니다.`,
             } : {
                 label: '공식 가이드·공홈·커뮤니티 — 글로벌 (1순위 출처)',
                 queries: [
+                    `${game.title} official website`,
                     `${game.title} official guide system introduction`,
                     `${game.title} ${game.developer} official site game system`,
                     `${game.title} official discord OR forum system guide`,
                 ],
                 instruction: `
 ## 이번 회차 핵심 지시
-개발사(${game.developer})의 공식 홈페이지, 공식 가이드, 공식 Discord·포럼에서만 명칭을 수집하십시오.
+개발사(${game.developer})의 공식 홈페이지를 최우선으로 확인하고, 공식 가이드, 공식 Discord·포럼에서 시스템명·재화명을 수집하십시오.
+공식 홈페이지에서 UI 또는 공지에 표기된 명칭을 그대로 수집하십시오.
 공식 출처에서 확인된 명칭만 [시스템명]·[재화명]에 기재하십시오.
 공식 출처 URL이 없으면 이번 회차는 실패로 처리됩니다.`,
             };
