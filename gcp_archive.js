@@ -612,7 +612,7 @@ function sanitizeMermaid(rawCode) {
 //  리포트 내 모든 ```mermaid 블록을 2단계 복구 전략으로 처리:
 //    1단계 Fast-Track: sanitizeMermaid 정규식 정제 → Kroki 검증
 //    2단계 QA Agent:   실패 시 Gemini 재작성 요청 → 최대 5회
-//  최종 실패 블록은 ⚠️ 플레이스홀더로 대체하고 나머지 리포트는 정상 저장
+//  최종 실패 블록은 완전 제거 (플레이스홀더 없음 — 노이즈보다 공백이 낫다)
 //
 //  mode 파라미터:
 //    'pdf'  → Base64 인라인 SVG img 태그 (PDF 렌더링용, 외부 fetch 없음)
@@ -711,8 +711,11 @@ ${currentMermaid}`;
             }
         } else {
             brokenCount++;
-            console.log(`  -> 🚨 [다이어그램 복구 실패] 플레이스홀더로 대체. (누적 ${brokenCount}개)`);
-            mdText += `\n\n> ⚠️ **[다이어그램 렌더링 실패]** Mermaid 파싱 오류로 인해 이 다이어그램을 표시할 수 없습니다.\n\n`;
+            console.log(`  -> 🚨 [다이어그램 복구 실패] 블록 제거. (누적 ${brokenCount}개)`);
+            // 복구 실패한 다이어그램은 완전 제거 — 노이즈보다 없는 게 낫다
+            // MD(LLM용): 원래부터 Mermaid 코드블록 원본 유지이므로 이 경로 미도달
+            // PDF/HTML(사람용): 깨진 블록보다 공백이 나음. 플레이스홀더 없이 제거.
+            // (필요 시 mode === 'html' 분기로 별도 처리 가능)
         }
 
         lastIndex = match.index + match[0].length;
@@ -1540,12 +1543,50 @@ async function main() {
                 `rank: ${rank}`,
                 `app_id: "${game.appId}"`,
                 `developer: "${game.developer}"`,
+                `developer_id: "${game.developerId || ''}"`,
                 `release_date: "${releaseDate}"`,
+                `updated: "${game.updated ? new Date(game.updated * 1000).toISOString().slice(0, 10) : ''}"`,
+                `version: "${game.version || ''}"`,
                 `category: "${category}"`,
                 `category_code: "${categoryCode}"`,
                 `core_system: "${coreSystemName}"`,
+                `genre: "${game.genre || ''}"`,
+                `genre_id: "${game.genreId || ''}"`,
+                `content_rating: "${game.contentRating || ''}"`,
+                `score: ${game.score || 0}`,
+                `ratings: ${game.ratings || 0}`,
+                `reviews: ${game.reviews || 0}`,
+                `installs: "${game.installs || ''}"`,
+                `min_installs: ${game.minInstalls || 0}`,
+                `free: ${game.free ?? true}`,
+                `price: ${game.price || 0}`,
+                `price_text: "${game.priceText || '무료'}"`,
+                `ad_supported: ${game.adSupported ?? false}`,
+                `offers_iap: ${game.offersIAP ?? false}`,
+                `iap_range: "${game.IAPRange || ''}"`,
+                `android_version: "${game.androidVersion || ''}"`,
+                `summary: "${(game.summary || '').replace(/"/g, "'")}"`,
                 '---',
                 '',
+                // 스토어 설명 — YAML에 넣으면 깨지므로 본문 첫 섹션으로 분리
+                // LLM이 게임의 공식 소개 텍스트를 컨텍스트로 학습할 수 있음
+                ...(game.description ? [
+                    '## 스토어 설명 (Google Play 공식)',
+                    '',
+                    game.description.replace(/\r\n/g, '\n').trim(),
+                    '',
+                    '---',
+                    '',
+                ] : []),
+                // 최근 업데이트 내역 — 라이브 옵스·이벤트 패턴 학습에 유용
+                ...(game.recentChanges ? [
+                    '## 최근 업데이트 내역',
+                    '',
+                    game.recentChanges.replace(/\r\n/g, '\n').trim(),
+                    '',
+                    '---',
+                    '',
+                ] : []),
                 reportText,
             ].join('\n');
 
