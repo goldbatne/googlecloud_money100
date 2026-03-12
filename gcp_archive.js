@@ -647,6 +647,7 @@ async function processMermaidBlocks(reportText, qaModel, mode = 'pdf') {
         // ── 2단계: QA Agent ──────────────────────────────────────────────
         if (!fixedMermaid) {
             console.log(`  -> ⚠️  [Fast-Track 실패] QA 에이전트 호출...`);
+            await delay(10000); // 연속 호출 버스트 방지 쿨다운
             let currentMermaid = originalMermaid;
 
             for (let attempt = 1; attempt <= MAX_QA_RETRIES; attempt++) {
