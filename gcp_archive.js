@@ -1344,6 +1344,11 @@ async function main() {
 
         // ── 4. 게임별 분석 문서 생성 루프 ────────────────────────────────────
         for (let idx = 0; idx < targetGames.length; idx++) {
+            // 게임 간 RPM 버퍼 — 첫 게임은 스킵, 이후 90초 대기
+            // (프로젝트당 RPM 10 × 5키 = 분당 50회. 게임 1개당 최소 7~10회 호출이므로
+            //  90초 간격이면 각 게임 처리 중 키 풀 냉각 시간 확보)
+            if (idx > 0) await delay(90000);
+
             const game     = targetGames[idx];
             const rank     = game.actualRank;
             const progress = `[${idx + 1}/${targetGames.length}]`;
@@ -1713,30 +1718,7 @@ async function main() {
         console.log(`🎉 Google Drive 동기화 완료`);
         console.log(`${'='.repeat(56)}\n`);
 
-        // ── 6. Drive 실패 로그 파일 저장 ─────────────────────────────────────
-        if (errorLog.length > 0) {
-            try {
-                const logFileName  = `[${dateString}]_ERROR_LOG_rank${process.env.START_RANK || 1}-${process.env.END_RANK || 50}.txt`;
-                const logContent   = [
-                    `[${dateString}] 실패 로그 (rank ${process.env.START_RANK || 1}~${process.env.END_RANK || 50})`,
-                    `총 ${errorLog.length}건`,
-                    '='.repeat(56),
-                    ...errorLog,
-                ].join('\n');
-                const logDriveId = await uploadToDrive({
-                    fileName: logFileName,
-                    folderId: ROOT_FOLDER_ID,
-                    mimeType: 'text/plain',
-                    content:  Buffer.from(logContent, 'utf8'),
-                });
-                console.log(`📋 실패 로그 Drive 저장 완료: ${logFileName} (${logDriveId})`);
-            } catch (logErr) {
-                console.error(`⚠️  실패 로그 Drive 저장 실패: ${logErr.message}`);
-                // 로컬 출력으로라도 남김
-                console.error('=== ERROR LOG ===');
-                errorLog.forEach(e => console.error(e));
-            }
-        }
+
 
     } catch (fatalError) {
         console.error('💀 치명적 에러 발생:', fatalError);
