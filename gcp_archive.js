@@ -628,7 +628,7 @@ function sanitizeMermaid(rawCode) {
 //    'html' → Kroki URL img 태그 (HTML 경량화, 파일 크기 절감)
 // =============================================================================
 
-async function processMermaidBlocks(reportText, qaModel, mode = 'pdf') {
+async function processMermaidBlocks(reportText, qaFactory, mode = 'pdf') {
     const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)```/gi;
     let mdText      = '';
     let lastIndex   = 0;
@@ -1626,7 +1626,7 @@ async function main() {
             // mdLlmText는 Mermaid 코드블록 원본 유지 (LLM 학습 노이즈 방지)
             // PDF: Base64 인라인 SVG (오프라인 렌더링, GitHub Actions sandbox 대응)
             // HTML: Kroki URL (경량화, 외부 공유 최적화)
-            const { mdText: pdfMdText, brokenCount }       = await processMermaidBlocks(reportTextForVisual, qaModel, 'pdf');
+            const { mdText: pdfMdText, brokenCount }       = await processMermaidBlocks(reportTextForVisual, qaFactory, 'pdf');
             if (brokenCount > 0) {
                 stats.diagram++;
                 stats.skipped++;
@@ -1634,7 +1634,7 @@ async function main() {
                 if (idx < targetGames.length - 1) await delay(30000);
                 continue;
             }
-            const { mdText: htmlMdText, brokenCount: htmlBrokenCount } = await processMermaidBlocks(reportTextForVisual, qaModel, 'html');
+            const { mdText: htmlMdText, brokenCount: htmlBrokenCount } = await processMermaidBlocks(reportTextForVisual, qaFactory, 'html');
             if (htmlBrokenCount > 0) {
                 stats.diagram++;
                 stats.skipped++;
