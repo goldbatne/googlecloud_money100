@@ -30,6 +30,8 @@ jobs:
           END_RANK: 50
           # ★ Top 50 전용 API 키 풀 (5개)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_TOP }}
+          # ★ YouTube Data API 키 (선택 — 없으면 Scout 4회차 자동 스킵)
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
@@ -65,6 +67,8 @@ jobs:
           END_RANK: 100
           # ★ Bottom 50 전용 API 키 풀 (5개)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_BOTTOM }}
+          # ★ YouTube Data API 키 (TOP과 동일한 키 공유 — 하루 10,000 유닛으로 100개 커버)
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
