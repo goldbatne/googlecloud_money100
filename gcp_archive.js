@@ -1520,6 +1520,236 @@ model TableName {
 
 
 // =============================================================================
+//  📝  buildAnalysisPrompt_Phase1 — 구조·다이어그램 집중 (01~04섹션)
+// =============================================================================
+function buildAnalysisPrompt_Phase1(game, rank, category, factSheet = '') {
+    const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}`;
+    return `
+# ⚠️ [최우선] 타겟 게임 고정
+* **게임명:** ${game.title} / **앱 ID:** ${game.appId} / **매출 순위:** ${rank}위
+* **분석 영역:** ${category}
+* **URL:** ${storeUrl}
+
+# [고정 어휘 사전]
+${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치로 직접 확인.'}
+
+# Step 0: 메타데이터 (절대 수정 금지)
+메인장르: (RPG/MMORPG/방치형/SLG전략/캐주얼퍼즐/액션슈팅/SNG시뮬/스포츠레이싱/카지노보드/기타)
+서브장르: (15자 이내)
+시스템:   (15자 이내 명사형)
+
+# Phase 1: 구조 및 명세 (01~04섹션) — 다이어그램 집중
+
+## 01. 정의서 (Definition)
+
+### 1.1 시스템 개요
+검색으로 확인된 시스템 정의·구성 요소·해금 조건. 공식 설명 우선. 최소 5문장.
+
+### 1.2 핵심 목적
+- **유저 관점**: 이 시스템을 통해 유저가 얻는 것 (보상·진행·재미) — 구체적 수치 포함
+- **사업 관점**: 수익화·리텐션·트래픽 유도 관점에서의 역할
+
+### 1.3 용어 정의
+확인된 게임 내 고유 용어·명칭. (★ 표 강제, 최소 8행)
+| 용어 | 정의 | 비고 |
+
+### 1.4 분석 범위 및 관련 시스템
+이 시스템과 연결된 다른 시스템·재화·콘텐츠 열거.
+
+### 1.5 설계 의도 요약
+이 시스템이 왜 이렇게 설계됐는지 한 문단으로 선요약.
+
+---
+
+## 02. 구조도 (Architecture)
+
+### 2.1 메인 시스템 구조도
+(★ Mermaid \`graph LR\` 강제 — 노드 최소 8개 이상)
+
+### 2.2 서브시스템 구조도 A
+주요 서브시스템 내부 구조. (★ Mermaid \`graph TD\` 강제)
+
+### 2.3 서브시스템 구조도 B
+두 번째 서브시스템 또는 재화 흐름도. (★ Mermaid \`graph LR\` 강제)
+
+### 2.4 테크트리 / 성장 구조도
+확인된 강화·성장·해금 경로. (★ Mermaid \`graph TD\` 강제)
+
+---
+
+## 03. 플로우차트 (Flowchart)
+
+### 3.1 메인 이용 플로우
+유저의 핵심 이용 흐름 전체. (★ Mermaid \`flowchart TD\` 강제 — 노드 최소 10개)
+
+### 3.2 핵심 서브 플로우 A
+가장 중요한 서브 플로우. (★ Mermaid \`flowchart TD\` 강제)
+
+### 3.3 핵심 서브 플로우 B
+두 번째 서브 플로우 (획득·소비·강화 중 하나). (★ Mermaid \`flowchart TD\` 강제)
+
+---
+
+## 04. 상세 명세서 (Specification)
+
+### 4.1 UI 레이아웃
+확인된 화면 구성·메뉴 뎁스·주요 버튼 배치. 최소 3문장.
+
+### 4.2 인터랙션 명세
+확인된 주요 유저 액션과 시스템 반응. (★ 표 강제)
+| 액션 | 입력 조건 | 시스템 반응 | 결과 |
+
+### 4.3 애니메이션·사운드 명세
+확인된 주요 연출 타이밍·사운드 큐. (★ 표 강제)
+| 이벤트 | 연출 | 시간(초) | 비고 |
+없으면 "데이터 비공개" 표기.
+
+### 4.4 상태 전이
+확인된 시스템 내 주요 상태 변화. (★ Mermaid \`stateDiagram-v2\` 강제)
+
+### 4.5 예외 처리 플로우
+확인된 오류·예외 상황 처리 흐름. (★ Mermaid \`flowchart TD\` 강제)
+없으면 확인된 2개 이상의 예외 케이스만으로 최소 구성.
+
+---
+
+# ★ 딥 서치 철칙 (Phase 1)
+1. 모든 검색은 "${game.title}" + 앱ID "${game.appId}" 기준.
+2. 다이어그램 우선 — 각 소항목의 Mermaid 다이어그램을 반드시 포함. 데이터 부족 시에도 확인된 요소만으로 최소 구조 생성.
+3. 검색으로 확인된 사실만 기술. 확인 불가는 "데이터 비공개 (검색 불가)" 표기.
+4. 데이터가 전혀 없는 게임이면 [ABORT_NO_DATA] 한 줄만 출력.
+5. 타겟 게임이 아닌 다른 게임 데이터가 섞이면 [IP_CONFUSED] 한 줄만 출력.
+
+# Output Constraints
+* [Mermaid 규칙] 화살표 텍스트(\`-->|텍스트|\`)는 10자 이내. 대괄호/중괄호 안에 콜론·따옴표·쉼표 절대 금지.
+* [노드 ID 규칙] 노드 ID는 반드시 띄어쓰기 없는 영문+숫자 조합. 한글 노드 ID 절대 금지.
+* [subgraph 규칙] 모든 \`subgraph\` 이름은 반드시 큰따옴표로 감쌀 것.
+* [erDiagram 규칙] \`erDiagram\` 속성은 따옴표·코멘트 없이 '타입 이름' 형식만.
+* [금지 패턴] 노드 레이블 괄호 중첩(\`([...])\`) 절대 금지.
+`;
+}
+
+// =============================================================================
+//  📝  buildAnalysisPrompt_Phase2 — 데이터·분석·비교 집중 (05~09섹션)
+// =============================================================================
+function buildAnalysisPrompt_Phase2(game, rank, category, factSheet = '', phase1Text = '') {
+    const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}`;
+    return `
+# ⚠️ [최우선] 타겟 게임 고정
+* **게임명:** ${game.title} / **앱 ID:** ${game.appId} / **매출 순위:** ${rank}위
+* **분석 영역:** ${category}
+
+# [Phase 1 분석 결과 요약]
+${phase1Text ? phase1Text.substring(0, 3000) : '없음 — 딥 서치로 직접 보완.'}
+
+# [고정 어휘 사전]
+${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치 집중 모드.\n최소 5회 검색 시도: 공식→커뮤니티(인벤·나무위키·아카라이브)→영문(fandom·reddit·game8)→수치 전용→벤치마크 비교.'}
+
+# Phase 2: 데이터·분석·비교 (05~09섹션) — 수치 집중
+
+## 05. 데이터 테이블 (Data Table)
+
+### 5.1 재화 Source / Sink 테이블
+(★ 표 강제, 최소 6행)
+| 재화명 | 주요 획득처 | 주요 소모처 | 일일 획득량(추정) |
+
+### 5.2 핵심 수치 밸런스
+(★ 표 강제, 최소 15행 목표)
+아래 카테고리 전부 탐색 후 확인된 것만 기재:
+- 진행·성장: 레벨 상한, 스테이지 수, 강화 단계, 승급 조건
+- 시간·쿨타임: 쿨타임, 대기 시간, 자동 처리 주기, 세션 길이
+- 확률·배율: 가챠 확률, 강화 성공률, 크리티컬 배율, 천장 수치
+- 재화·경제: 일일 획득량, 소모량, 교환 비율, 패스 가격
+- 전투·밸런스: 기본 스탯, 데미지 공식, 속성 배율, PvP 매칭 범위
+| 항목 | 수치 | 출처 |
+
+### 5.3 레시피·처리 속도 테이블
+확인된 생산·처리·제작 레시피 전체. (★ 표 강제)
+없으면 강화 단계별 비용·성공률 테이블로 대체.
+| 항목 | 처리 시간 | 입력 재료 | 출력 결과 | 비고 |
+
+### 5.4 DB 테이블 스키마 (구현 참고용)
+확인된 시스템 구조 기반 핵심 테이블 추론. (★ 표 강제)
+| 테이블명 | 주요 컬럼 | 설명 | 레코드 규모(추정) |
+
+### 5.5 ORM 코드 템플릿 (TypeScript / Python)
+핵심 테이블 2~3개를 Prisma 스키마 또는 SQLAlchemy 형식으로 작성.
+불확실한 부분은 TODO 주석.
+
+### 5.6 핵심 API·이벤트 흐름
+확인된 주요 유저 액션 → 서버 처리 흐름 추론.
+| 액션 | 요청 파라미터(추론) | 서버 처리(추론) | 응답(추론) |
+
+---
+
+## 06. 기획 의도 및 심리 설계 분석 (Design Intent)
+
+### 6.1 설계 의도
+이 시스템이 왜 이렇게 설계됐는가. 수익화·리텐션·트래픽 유도 관점. 최소 5문장.
+
+### 6.2 심리 설계
+수집된 팩트에서 역으로 읽히는 심리 트리거. FOMO·손실 회피·보상 스케줄·사회적 비교 등.
+근거 없는 트리거 나열 금지.
+
+---
+
+## 07. 문제점 및 개선 제안 (Issues & Suggestions)
+(★ 표 강제)
+
+### 7.1 문제점
+| 항목 | 문제 내용 | 근거 |
+
+### 7.2 개선 제안
+| 문제 항목 | 개선 방향 | 타 게임 사례 |
+
+---
+
+## 08. 벤치마크 비교 분석 (Benchmark)
+
+### 8.1 비교 대상
+동일 장르·유사 시스템 타 게임 2~3개 선정. 선정 근거 명시.
+
+### 8.2 비교 매트릭스
+(★ 표 강제)
+| 항목 | ${game.title} | 비교 게임 A | 비교 게임 B |
+
+### 8.3 트레이드오프 분석
+이 게임 시스템이 타 게임 대비 얻은 것·포기한 것.
+
+### 8.4 실개발 인사이트
+타 게임 사례에서 이 시스템에 적용 가능한 개선 아이디어.
+
+---
+
+## 09. 예외 처리 및 엣지케이스 (Edge Cases)
+
+### 9.1 엣지케이스
+| 케이스 | 발생 조건 | 시스템 반응 | 출처 |
+
+### 9.2 사이드 이펙트
+이 시스템이 다른 시스템에 미치는 의도치 않은 영향.
+
+### 9.3 동시성·레이스 컨디션
+멀티플레이·길드·실시간 이벤트에서 발생 가능한 동시 접근 이슈.
+
+### 9.4 예외 상황별 플로우
+(★ Mermaid \`flowchart TD\` — 확인된 케이스만, 없으면 생략)
+
+---
+
+# ★ 딥 서치 철칙 (Phase 2)
+1. 모든 검색은 "${game.title}" + 앱ID "${game.appId}" 기준. IP 혼동 즉시 키워드 변경.
+2. **수치 탐색 최우선**: 검색 횟수 제한 없음. 수치 15행 채울 때까지 반복 탐색.
+   - "${game.title} 쿨타임 수치", "${game.title} 가챠 확률", "${game.title} 강화 성공률"
+   - "${game.title} 나무위키", "${game.title} fandom wiki", "${game.title} reddit guide"
+   - 나무위키·팬덤 위키 수치 테이블 반드시 확인.
+3. "데이터 비공개" 표기 전 최소 3가지 다른 검색어로 재시도 필수.
+4. 복수 출처 교차 검증. 단일 출처는 *(단일 출처)* 주석.
+5. 커뮤니티 측정값 적극 활용. *(커뮤니티 측정값)* 주석.
+`;
+}
+
+// =============================================================================
 //  🏃  메인 파이프라인
 // =============================================================================
 
@@ -1750,40 +1980,37 @@ async function main() {
                 stats.scoutOk++;
             }
 
-            // 4-4. 분석 문서 초안 생성
-            const reportRaw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt(game, rank, category, factSheet), MAX_DRAFT_RETRIES);
+            // 4-4. 분석 문서 초안 생성 — Phase 1 (구조·다이어그램 집중)
+            console.log(`  -> 📐 [Phase 1] 구조·다이어그램 생성 중...`);
+            const phase1Raw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase1(game, rank, category, factSheet), MAX_DRAFT_RETRIES);
 
-            if (!reportRaw) {
-                const errMsg = `[${rank}위] ${game.title} — Draft 생성 ${MAX_DRAFT_RETRIES}회 실패`;
+            if (!phase1Raw) {
+                const errMsg = `[${rank}위] ${game.title} — Phase1 생성 ${MAX_DRAFT_RETRIES}회 실패`;
                 console.error(`  -> ❌ ${errMsg}`);
                 errorLog.push(errMsg);
                 stats.skipped++;
                 continue;
             }
-
-            // Writer가 직접 판단한 중단 신호 체크
-            if (reportRaw.includes('[ABORT_NO_DATA]')) {
+            if (phase1Raw.includes('[ABORT_NO_DATA]')) {
                 const errMsg = `[${rank}위] ${game.title} — Writer ABORT_NO_DATA`;
                 console.log(`  -> ⏭️  ${errMsg}`);
                 errorLog.push(errMsg);
                 stats.skipped++;
                 continue;
             }
-            if (reportRaw.includes('[IP_CONFUSED]')) {
-                // factSheet 주입 상태였다면 제거 후 순수 딥서치로 1회 재시도
+            if (phase1Raw.includes('[IP_CONFUSED]')) {
                 if (factSheet) {
-                    console.log(`  -> ⚠️  [WRITER-IP] IP_CONFUSED — factSheet 제거 후 딥서치 재시도...`);
-                    const retryRaw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt(game, rank, category, ''), MAX_DRAFT_RETRIES);
-                    if (retryRaw && !retryRaw.includes('[IP_CONFUSED]') && !retryRaw.includes('[ABORT_NO_DATA]')) {
-                        console.log(`  -> ✅ [WRITER-IP] 딥서치 재시도 성공`);
-                        var finalReportRaw = retryRaw;
-                    } else {
+                    console.log(`  -> ⚠️  [WRITER-IP] IP_CONFUSED — factSheet 제거 후 Phase1 재시도...`);
+                    const retryP1 = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase1(game, rank, category, ''), MAX_DRAFT_RETRIES);
+                    if (!retryP1 || retryP1.includes('[IP_CONFUSED]') || retryP1.includes('[ABORT_NO_DATA]')) {
                         const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED (재시도 후에도 실패)`;
                         console.log(`  -> ⏭️  ${errMsg}`);
                         errorLog.push(errMsg);
                         stats.skipped++;
                         continue;
                     }
+                    var phase1Text = retryP1;
+                    console.log(`  -> ✅ [WRITER-IP] Phase1 딥서치 재시도 성공`);
                 } else {
                     const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED`;
                     console.log(`  -> ⏭️  ${errMsg}`);
@@ -1791,19 +2018,46 @@ async function main() {
                     stats.skipped++;
                     continue;
                 }
+            } else {
+                var phase1Text = phase1Raw;
             }
+            console.log(`  -> ✅ [Phase 1] 완료`);
 
-            // 4-5. 리포트 텍스트 정제
-            const effectiveReport = (typeof finalReportRaw !== 'undefined') ? finalReportRaw : reportRaw;
+            // 4-5. Phase 2 (데이터·수치·분석·비교 집중)
+            console.log(`  -> 📊 [Phase 2] 데이터·수치·분석 생성 중...`);
+            const phase2Raw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase2(game, rank, category, factSheet, phase1Text), MAX_DRAFT_RETRIES);
+
+            if (!phase2Raw) {
+                console.log(`  -> ⚠️  [Phase 2] 생성 실패 — Phase 1만으로 진행`);
+            }
+            const phase2Text = phase2Raw || '';
+            if (phase2Text) console.log(`  -> ✅ [Phase 2] 완료`);
+
+            // 4-6. Phase 1 + Phase 2 합치기
+            // Phase 1에서 메타데이터(메인장르/서브장르/시스템) 추출 후
+            // 두 결과를 하나의 MD로 병합
+            const combinedRaw = phase1Text + '\n\n---\n\n' + phase2Text;
+
+            // 4-7. 리포트 텍스트 정제
+            const effectiveReport = combinedRaw;
             let reportText = effectiveReport
                 .replace(/^```(markdown|md)?/i, '')
                 .replace(/```$/i, '')
                 .trim();
 
-            // AI가 메타데이터를 중복 출력한 경우 마지막 것만 사용
-            const metaMatches = [...reportText.matchAll(/메인장르:/g)];
-            if (metaMatches.length > 1) {
-                reportText = reportText.substring(metaMatches[metaMatches.length - 1].index);
+            // Phase1+Phase2 병합 — 메타데이터 중복 제거
+            // Phase2 시작 구분자(## 05.) 이후 중복 메타데이터 블록 제거
+            const phase2StartIdx = reportText.indexOf('## 05.');
+            if (phase2StartIdx > 0) {
+                const phase1Part = reportText.substring(0, phase2StartIdx);
+                let phase2Part = reportText.substring(phase2StartIdx);
+                // 메타데이터 3줄(메인장르/서브장르/시스템) 제거
+                phase2Part = phase2Part.split('\n').filter(line =>
+                    !line.startsWith('메인장르:') &&
+                    !line.startsWith('서브장르:') &&
+                    !line.startsWith('시스템:')
+                ).join('\n');
+                reportText = phase1Part + phase2Part;
             }
 
             // 파일명용 핵심 시스템명 추출
