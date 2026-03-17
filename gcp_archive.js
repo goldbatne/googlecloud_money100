@@ -1321,6 +1321,8 @@ ${factSheet ? `${factSheet}
 - **분석 항목**: 팩트 항목에서 확인된 근거에 한해서만 추론. 근거 없는 주장 금지. 단일 출처 기반 추론은 *(단일 출처)* 주석.
 - **다이어그램**: 각 섹션에 지정된 Mermaid 다이어그램을 반드시 포함할 것. 데이터 부족 시에도 확인된 요소만으로 최소 구조 생성.
 - **깊이 기준**: 각 항목은 최소 3문장 이상. 수치·명칭·흐름이 구체적으로 명시된 경우만 작성.
+- **수치 우선**: 텍스트 서술보다 수치·표·다이어그램 우선. 같은 정보라면 표로 정리.
+- **소항목 확장**: 확인된 데이터가 충분하면 소항목을 추가 생성해도 됨 (예: 5.3 레벨별 스탯 테이블, 5.4 확률 테이블 등).
 
 ---
 
@@ -1389,7 +1391,13 @@ ${factSheet ? `${factSheet}
 | 재화명 | 주요 획득처 | 주요 소모처 | 일일 획득량(추정) |
 
 ### 5.2 핵심 수치 밸런스
-확인된 수치·비율·쿨타임·확률 등. (★ 표 강제)
+확인된 수치·비율·쿨타임·확률 등. (★ 표 강제, 최소 10행 이상 목표)
+아래 카테고리별로 확인된 수치를 최대한 채울 것. 없는 항목만 "데이터 비공개" 표기.
+- **진행·성장**: 레벨 상한, 스테이지 수, 강화 단계, 승급 조건
+- **시간·쿨타임**: 쿨타임, 대기 시간, 자동 처리 주기, 세션 길이
+- **확률·배율**: 가챠 확률, 강화 성공률, 크리티컬 배율, 천장 수치
+- **재화·경제**: 일일 획득량, 소모량, 교환 비율, 패스 가격
+- **전투·밸런스**: 기본 스탯, 데미지 공식, 속성 배율, PvP 매칭 범위
 | 항목 | 수치 | 출처 |
 
 ---
@@ -1425,10 +1433,14 @@ ${factSheet ? `${factSheet}
    - **2순위**: 인벤(inven.co.kr)·루리웹(ruliweb.com)·Game8(game8.co)·NGA·유튜브 심층 공략·리뷰
    - **3순위**: 나무위키·아카라이브·팬덤 위키·레딧 (교차검증 소스로 적극 활용)
 3. 나무위키·아카라이브·팬덤 위키는 수치·테이블 정보가 상세한 경우 적극 인용. 반드시 교차검증 후 *(단독)* 주석 없이 사용 가능.
-4. **수치 데이터 탐색 강화**: 처리 시간·쿨타임·재화 획득량·확률·스탯 수치는 반드시 별도 검색으로 확인 시도.
+4. **수치 데이터 탐색 강화 (최우선 과제)**: 처리 시간·쿨타임·재화 획득량·확률·스탯 수치는 반드시 별도 검색으로 확인 시도.
    - 검색어 예: "${game.title} 쿨타임 수치", "${game.title} cooldown stats", "${game.title} 재화 획득량 하루"
-   - 커뮤니티(인벤·레딧·나무위키)에서 유저 측정값도 적극 활용. 출처 명시 후 *(커뮤니티 측정값)* 주석.
-   - 수치를 끝내 찾지 못한 경우에만 "데이터 비공개 (검색 불가)" 표기. 섣불리 포기 금지.
+   - 검색어 예: "${game.title} 확률 공개", "${game.title} 가챠 확률", "${game.title} 강화 성공률"
+   - 검색어 예: "${game.title} 스탯 수치", "${game.title} 레벨 상한", "${game.title} 천장"
+   - 커뮤니티(인벤·레딧·나무위키·아카라이브·팬덤 위키)에서 유저 측정값도 적극 활용. *(커뮤니티 측정값)* 주석.
+   - **나무위키·팬덤 위키는 수치 테이블이 상세한 경우가 많음 — 반드시 확인.**
+   - **"데이터 비공개" 표기 전 최소 3가지 다른 검색어로 재시도 필수.** 섣불리 포기 금지.
+   - 수치 행이 10개 미만이면 추가 검색 시도. 10개 이상 채우는 것이 목표.
 5. 복수 출처 교차 검증 필수. 단일 출처만 있으면 *(단일 출처)* 주석.
 6. 1~3순위 모두 검색 불가 시에만 [ABORT_NO_DATA] 출력.
 
@@ -1512,12 +1524,19 @@ async function main() {
             const progress = `[${idx + 1}/${targetGames.length}]`;
 
             // 4-1. 앱 상세 정보 수집 (출시일 + 스토어 설명 + 최근 업데이트)
-            // gplay.list()가 성공한 시점이므로 gplay.app() 실패는 현실적으로 없음.
-            // 실패 시 어차피 fatalError로 파이프라인 중단이 맞는 동작.
-            const detail         = await gplay.app({ appId: game.appId });
-            const releaseDate    = detail.released      || '정보 없음';
-            const appDescription   = detail.description   || '';
-            const appRecentChanges = detail.recentChanges || '';
+            // 404/지역제한 등으로 실패할 수 있으므로 try-catch로 스킵 처리
+            let detail, releaseDate, appDescription, appRecentChanges;
+            try {
+                detail           = await gplay.app({ appId: game.appId });
+                releaseDate      = detail.released      || '정보 없음';
+                appDescription   = detail.description   || '';
+                appRecentChanges = detail.recentChanges || '';
+            } catch (appErr) {
+                console.log(`  -> ⚠️  [APP-SKIP] ${game.title} — 앱 상세 조회 실패 (${appErr.message?.substring(0, 40)}). 스킵.`);
+                stats.skipped++;
+                if (idx < targetGames.length - 1) await delay(30000);
+                continue;
+            }
 
             // 4-2. Gemini 모델 초기화 (Rate limit 시 키 전환 팩토리)
             // modelFactory: 호출할 때마다 다음 키로 새 모델 인스턴스 반환
