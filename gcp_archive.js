@@ -445,7 +445,7 @@ async function uploadToDrive({ fileName, folderId, mimeType, content }) {
  */
 function initModels(genAI, gameTitle, appId) {
     const scoutModel = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash-lite',
         tools: [{ googleSearch: {} }],
         systemInstruction:
             `당신은 게임 데이터 수집 전문 크롤러입니다. ` +
@@ -2023,8 +2023,8 @@ async function main() {
 
             // 4-5. Phase 2 (데이터·수치·분석·비교 집중)
             // Phase1 직후 rate limit 냉각을 위해 60초 대기
-            console.log(`  -> ⏳ [Phase 1→2] 키 냉각 대기 (60초)...`);
-            await delay(60000);
+            console.log(`  -> ⏳ [Phase 1→2] 키 냉각 대기 (180초)...`);
+            await delay(180000);
             console.log(`  -> 📊 [Phase 2] 데이터·수치·분석 생성 중...`);
             const phase2Raw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase2(game, rank, category, factSheet, phase1Text), MAX_DRAFT_RETRIES);
 
