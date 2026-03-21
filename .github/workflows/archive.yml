@@ -6,7 +6,7 @@ on:
   workflow_dispatch: 
 
 jobs:
-  scrape_1_25:
+  scrape_1_10:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,10 +20,10 @@ jobs:
         run: |
           npm install
           npm install md-to-pdf marked googleapis @google/generative-ai
-      - name: Run GCP Archive Script (Rank 1~25)
+      - name: Run GCP Archive Script (Rank 1~10)
         env:
           START_RANK: 1
-          END_RANK: 25
+          END_RANK: 10
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_1 }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
@@ -32,7 +32,7 @@ jobs:
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: node gcp_archive.js
 
-  scrape_26_50:
+  scrape_11_20:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,10 +48,10 @@ jobs:
           npm install md-to-pdf marked googleapis @google/generative-ai
       - name: Avoid Folder Creation Race Condition
         run: sleep 60
-      - name: Run GCP Archive Script (Rank 26~50)
+      - name: Run GCP Archive Script (Rank 11~20)
         env:
-          START_RANK: 26
-          END_RANK: 50
+          START_RANK: 11
+          END_RANK: 20
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
@@ -60,7 +60,7 @@ jobs:
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: node gcp_archive.js
 
-  scrape_51_75:
+  scrape_21_30:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,10 +76,10 @@ jobs:
           npm install md-to-pdf marked googleapis @google/generative-ai
       - name: Avoid Folder Creation Race Condition
         run: sleep 120
-      - name: Run GCP Archive Script (Rank 51~75)
+      - name: Run GCP Archive Script (Rank 21~30)
         env:
-          START_RANK: 51
-          END_RANK: 75
+          START_RANK: 21
+          END_RANK: 30
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_3 }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
@@ -88,7 +88,7 @@ jobs:
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: node gcp_archive.js
 
-  scrape_76_100:
+  scrape_31_40:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,11 +104,179 @@ jobs:
           npm install md-to-pdf marked googleapis @google/generative-ai
       - name: Avoid Folder Creation Race Condition
         run: sleep 180
-      - name: Run GCP Archive Script (Rank 76~100)
+      - name: Run GCP Archive Script (Rank 31~40)
         env:
-          START_RANK: 76
-          END_RANK: 100
+          START_RANK: 31
+          END_RANK: 40
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_4 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_41_50:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 240
+      - name: Run GCP Archive Script (Rank 41~50)
+        env:
+          START_RANK: 41
+          END_RANK: 50
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_5 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_51_60:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 300
+      - name: Run GCP Archive Script (Rank 51~60)
+        env:
+          START_RANK: 51
+          END_RANK: 60
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_6 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_61_70:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 360
+      - name: Run GCP Archive Script (Rank 61~70)
+        env:
+          START_RANK: 61
+          END_RANK: 70
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_7 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_71_80:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 420
+      - name: Run GCP Archive Script (Rank 71~80)
+        env:
+          START_RANK: 71
+          END_RANK: 80
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_8 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_81_90:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 480
+      - name: Run GCP Archive Script (Rank 81~90)
+        env:
+          START_RANK: 81
+          END_RANK: 90
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_9 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
+          GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
+          GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: node gcp_archive.js
+
+  scrape_91_100:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Korean Fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install md-to-pdf marked googleapis @google/generative-ai
+      - name: Avoid Folder Creation Race Condition
+        run: sleep 540
+      - name: Run GCP Archive Script (Rank 91~100)
+        env:
+          START_RANK: 91
+          END_RANK: 100
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_10 }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
