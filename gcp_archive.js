@@ -1904,12 +1904,62 @@ async function main() {
             console.log(`\n${progress} 매출 ${rank}위: ${game.title}`);
             console.log(`  -> 🎯 분석 영역: [${category}] / 출시일: ${releaseDate}`);
 
-            // 4-3. Scout — 공식 가이드 기준 시스템명 수집 (최대 4회)
+            // 4-3. Scout 0회차 — 공식 사이트·개발자 노트 직접 크롤링
+            // Google Play 스토어 페이지 + 개발사 공식 URL 직접 fetch
+            // 검색 경유 없이 원문 텍스트 추출 → 수치·패치노트·업데이트 내역 확보
+            let officialCrawlData = '';
+            try {
+                const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}&hl=ko`;
+                const crawlUrls = [storeUrl];
+
+                // 개발사 공식 웹사이트 URL이 있으면 추가
+                if (detail.developerWebsite) crawlUrls.push(detail.developerWebsite);
+
+                for (const url of crawlUrls) {
+                    try {
+                        const res = await fetch(url, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (compatible; GameAnalysisBot/1.0)',
+                                'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8'
+                            },
+                            signal: AbortSignal.timeout(10000)
+                        });
+                        if (!res.ok) continue;
+                        const html = await res.text();
+                        // 태그 제거 후 순수 텍스트 추출
+                        const text = html
+                            .replace(/<script[\s\S]*?<\/script>/gi, '')
+                            .replace(/<style[\s\S]*?<\/style>/gi, '')
+                            .replace(/<[^>]+>/g, ' ')
+                            .replace(/\s{2,}/g, ' ')
+                            .trim()
+                            .substring(0, 8000); // 8000자 제한
+                        if (text.length > 200) {
+                            officialCrawlData += `\n\n## 크롤링 출처: ${url}\n${text}`;
+                        }
+                    } catch { /* 개별 URL 실패 시 스킵 */ }
+                }
+
+                // 스토어 설명 + 최근 업데이트 추가
+                if (appDescription) officialCrawlData += `\n\n## 스토어 설명\n${appDescription.substring(0, 3000)}`;
+                if (appRecentChanges) officialCrawlData += `\n\n## 최근 업데이트 내역\n${appRecentChanges.substring(0, 2000)}`;
+
+                if (officialCrawlData.length > 300) {
+                    console.log(`  -> 🌐 [CRAWL] 공식 사이트 크롤링 완료 (${officialCrawlData.length}자)`);
+                }
+            } catch (crawlErr) {
+                console.log(`  -> ⚠️  [CRAWL] 크롤링 실패 — Scout 검색으로 진행`);
+            }
+
+            // 4-4. Scout — 공식 가이드 기준 시스템명 수집 (최대 4회)
             // 4회차: YouTube Data API 자막·설명 수집 (YOUTUBE_API_KEY 없으면 자동 스킵)
             const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
             const MAX_SCOUT_RETRIES = YOUTUBE_API_KEY ? 4 : 3;
 
-            let factSheet    = '';
+            // 크롤링 데이터를 factSheet 초기값으로 주입
+            let factSheet    = officialCrawlData
+                ? `## 공식 사이트 크롤링 데이터\n${officialCrawlData.substring(0, 6000)}\n[출처신뢰도] 높음`
+                : '';
             let scoutAborted = false;
             let scoutFormatFallback = false; // 모든 회차가 형식 실패 → Writer 자체 딥서치로 진행
 
