@@ -1609,11 +1609,11 @@ ${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치로 직접 
 
 ### 2.1 메인 시스템 구조도
 확인된 서브시스템 간 연결 관계.
-(★ Mermaid \`graph LR\` 강제 — 노드 4~6개. 영문 ID 필수. 레이블 5자 이내 명사만)
+(★ Mermaid \`graph LR\` 강제 — 노드 6~10개. 크롤링 기반 실제 구조)
 
 ### 2.2 서브시스템 구조도
 가장 핵심적인 서브시스템 1개 내부 구조 상세화.
-(★ Mermaid \`graph TD\` 강제 — 노드 3~5개. 영문 ID 필수. 레이블 5자 이내 명사만)
+(★ Mermaid \`graph TD\` 강제 — 노드 4~8개. 서브시스템 상세화)
 
 ---
 
@@ -1621,11 +1621,11 @@ ${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치로 직접 
 
 ### 3.1 메인 이용 플로우
 유저의 핵심 이용 흐름 전체.
-(★ Mermaid \`flowchart TD\` 강제 — 노드 5~7개. 핵심 경로만. 분기 최대 1개)
+(★ Mermaid \`flowchart TD\` 강제 — 노드 8~12개. 전체 이용 흐름)
 
 ### 3.2 핵심 서브 플로우
 가장 중요한 서브 플로우 1개 (획득·소비·강화 중 하나).
-(★ Mermaid \`flowchart TD\` 강제 — 노드 4~6개. 단순 직선 흐름 우선)
+(★ Mermaid \`flowchart TD\` 강제 — 노드 6~10개. 핵심 서브 플로우)
 
 ---
 
@@ -1645,34 +1645,33 @@ ${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치로 직접 
 
 ### 4.4 상태 전이
 확인된 시스템 내 주요 상태 변화.
-(★ Mermaid \`stateDiagram-v2\` 강제 — 상태 2~4개. 전이 최대 5개)
+(★ Mermaid \`stateDiagram-v2\` 강제 — 상태 3~5개. 전체 상태 전이)
 
 ---
 
-# ★ 다이어그램 품질 기준 (Phase 1 최우선 — QA 통과가 목표)
+# ★ 다이어그램 품질 기준 (Phase 1 최우선)
+공식 사이트 크롤링 데이터를 기반으로 실제 시스템 구조를 반영한 다이어그램 생성.
 
-## 필수 4개
-- 2.1: graph LR — 4~6개 노드
-- 2.2: graph TD — 3~5개 노드
-- 3.1: flowchart TD — 5~7개 노드
-- 4.4: stateDiagram-v2 — 2~4개 상태
+## 필수 4개 (원본 수준 목표)
+- 2.1: graph LR — 6~10개 노드. 메인 시스템 전체 구조
+- 2.2: graph TD — 4~8개 노드. 핵심 서브시스템 내부
+- 3.1: flowchart TD — 8~12개 노드. 유저 전체 플로우
+- 4.4: stateDiagram-v2 — 3~5개 상태. 시스템 상태 전이
 
 ## 절대 규칙 (위반 시 QA 실패)
-- **노드 ID**: A1, B2, S1, E1 등 영문+숫자만. 한글 ID 절대 금지
-- **레이블**: 한글 5자 이내 또는 영문 8자 이내 단순 명사. 특수문자 금지
+- **노드 ID**: 영문+숫자만 (A1, B2, Node1). 한글 ID 절대 금지
+- **레이블**: 한글 8자 이내 또는 영문 12자 이내. 콜론·따옴표 금지
 - **화살표**: --> 또는 -> 하나만. 혼용 금지
 - **괄호**: 노드 정의에 [] 또는 () 하나만. 중첩 금지
-- **subgraph**: 사용하지 말 것 (파싱 오류 원인)
-- **긴 문장**: 노드 레이블에 문장 금지. 단어 하나만
+- **화살표 텍스트**: 10자 이내. -->|텍스트| 형식
 
-## 올바른 예시 (반드시 이 형식 준수)
-graph LR
-    A1[입장] --> B1[전투]
-    B1 --> C1[보상]
-    C1 --> D1[강화]
+## 크롤링 데이터 활용 원칙
+- 공식 사이트에서 확인된 시스템명·재화명·수치를 노드 레이블에 사용
+- 실제 게임 내 UI 흐름을 플로우차트에 반영
+- 패치노트·업데이트 내역의 수치를 다이어그램 주석에 활용
 
 ## 데이터 부족 시
-확인된 2개 요소만으로 최소 구조 생성. 절대 생략 금지.
+확인된 3개 이상 요소로 최소 구조 생성. 절대 생략 금지.
 
 # ★ 딥 서치 철칙 (Phase 1)
 1. 모든 검색은 "${game.title}" + 앱ID "${game.appId}" 기준.
@@ -2263,6 +2262,14 @@ async function main() {
 
             // ── PDF/HTML 전용: blockquote 헤더 + Mermaid → SVG 치환 ─────────
             // 사람이 읽는 시각화 문서용.
+            // 공식 사이트 크롤링 성공 여부에 따라 출처 표기
+            const crawlSourceLine = officialCrawlData
+                ? `> **데이터 출처:** 공식 사이트 크롤링 + Google Search Grounding (신뢰도: 높음)`
+                : `> **데이터 출처:** Google Search Grounding`;
+            const crawlUrlLine = detail.developerWebsite
+                ? `> **공식 사이트:** ${detail.developerWebsite}`
+                : '';
+
             const reportTextForVisual = [
                 `# [${rank}위] ${game.title} 분석 문서`,
                 `> **분석 카테고리:** ${category}`,
@@ -2270,11 +2277,13 @@ async function main() {
                 `> **개발사:** ${game.developer}`,
                 `> **매출 순위:** ${rank}위 (${dateString} 기준)`,
                 `> **출시일:** ${releaseDate}`,
+                crawlSourceLine,
+                crawlUrlLine,
                 '',
                 '---',
                 '',
                 reportText,
-            ].join('\n');
+            ].filter(Boolean).join('\n');
 
             // 4-6. Mermaid 블록 처리 — PDF/HTML용 소스에만 적용 (mode별 분리)
             // mdLlmText는 Mermaid 코드블록 원본 유지 (LLM 학습 노이즈 방지)
