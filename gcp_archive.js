@@ -1809,6 +1809,84 @@ ${factSheet ? factSheet : '⚠️ 팩트 사전 없음 — 딥 서치 집중 모
 }
 
 // =============================================================================
+//  🎨  buildDiagramPrompt — 다이어그램 전담 재생성 프롬프트
+//  Phase1 텍스트에서 시스템 구조를 파악 후 고품질 다이어그램 4개만 집중 생성
+//  검색 없이 주어진 텍스트만 참고 — QA 통과 최우선
+// =============================================================================
+function buildDiagramPrompt(game, phase1Text, factSheet = '') {
+    return `
+# 다이어그램 전담 생성 — QA 통과 최우선
+
+## 게임 정보
+- 게임명: ${game.title}
+
+## Phase1 분석 결과 (참고용)
+${phase1Text.substring(0, 4000)}
+
+## 공식 데이터
+${factSheet ? factSheet.substring(0, 1500) : '없음'}
+
+---
+
+# 지시사항
+위 Phase1 분석 결과를 바탕으로 아래 4개의 Mermaid 다이어그램만 생성하라.
+검색은 하지 말 것. 텍스트에서 구조를 파악해 표현.
+
+## [다이어그램 1] 메인 시스템 구조도
+\`\`\`mermaid
+graph LR
+    (6~10개 노드. 서브시스템 간 연결 관계)
+\`\`\`
+
+## [다이어그램 2] 서브시스템 구조도
+\`\`\`mermaid
+graph TD
+    (4~8개 노드. 핵심 서브시스템 내부)
+\`\`\`
+
+## [다이어그램 3] 유저 이용 플로우
+\`\`\`mermaid
+flowchart TD
+    (8~12개 노드. 전체 이용 흐름)
+\`\`\`
+
+## [다이어그램 4] 상태 전이
+\`\`\`mermaid
+stateDiagram-v2
+    (3~5개 상태. 주요 상태 전이)
+\`\`\`
+
+---
+
+# 절대 규칙
+- 노드 ID: 영문+숫자만 (A1, B2). 한글 ID 절대 금지
+- 레이블: 한글 8자 이내. 콜론·따옴표·쉼표 금지
+- 화살표: --> 하나만. 혼용 금지
+- 괄호: [] 또는 () 하나만. 중첩 금지
+- subgraph 사용 금지
+- 위 4개 다이어그램 외 다른 텍스트 출력 금지
+`;
+}
+
+// Phase1 텍스트의 기존 Mermaid 블록을 새 다이어그램으로 교체
+function replaceDiagramsInPhase1(phase1Text, newDiagramText) {
+    const newDiagrams = [];
+    const newDiagRegex = /```mermaid[\s\S]*?```/gi;
+    for (const match of [...newDiagramText.matchAll(newDiagRegex)]) {
+        newDiagrams.push(match[0]);
+    }
+    if (newDiagrams.length === 0) return phase1Text;
+
+    let diagIdx = 0;
+    const result = phase1Text.replace(/```mermaid[\s\S]*?```/gi, () => {
+        if (diagIdx < newDiagrams.length) return newDiagrams[diagIdx++];
+        return '';
+    });
+    if (diagIdx === 0) return result + '\n\n' + newDiagrams.join('\n\n');
+    return result;
+}
+
+// =============================================================================
 //  🏃  메인 파이프라인
 // =============================================================================
 
@@ -2132,10 +2210,21 @@ async function main() {
             }
             console.log(`  -> ✅ [Phase 1] 완료`);
 
-            // 4-5. Phase 2 (데이터·수치·분석·비교 집중)
-            // Phase1 직후 rate limit 냉각을 위해 60초 대기
-            console.log(`  -> ⏳ [Phase 1→2] 키 냉각 대기 (180초)...`);
-            await delay(180000);
+            // 4-5. 다이어그램 전담 재생성 (Phase1 직후 — 검색 없이 구조 파악 후 집중 생성)
+            console.log(`  -> 🎨 [DIAG] 다이어그램 전담 재생성 중...`);
+            await delay(30000); // 짧은 냉각 후 다이어그램 전담 호출
+            const diagRaw = await callGeminiWithRetry(draftFactory, buildDiagramPrompt(game, phase1Text, factSheet), MAX_DRAFT_RETRIES);
+            if (diagRaw && diagRaw.includes('```mermaid')) {
+                phase1Text = replaceDiagramsInPhase1(phase1Text, diagRaw);
+                const diagCount = (diagRaw.match(/```mermaid/gi) || []).length;
+                console.log(`  -> ✅ [DIAG] 다이어그램 ${diagCount}개 재생성 완료`);
+            } else {
+                console.log(`  -> ⚠️  [DIAG] 다이어그램 재생성 실패 — Phase1 원본 유지`);
+            }
+
+            // 4-6. Phase 2 (데이터·수치·분석·비교 집중)
+            console.log(`  -> ⏳ [Phase 1→2] 키 냉각 대기 (150초)...`);
+            await delay(150000);
             console.log(`  -> 📊 [Phase 2] 데이터·수치·분석 생성 중...`);
             const phase2Raw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase2(game, rank, category, factSheet, phase1Text), MAX_DRAFT_RETRIES);
 
