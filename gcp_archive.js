@@ -468,7 +468,7 @@ function initModels(genAI, gameTitle, appId) {
     });
 
     const qaModel = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         systemInstruction:
             '당신은 감정이 없는 엄격한 다이어그램 컴파일러입니다. ' +
             '기획적 의도, 설명, 마크다운(```) 기호 없이 오직 완벽하게 동작하는 Mermaid 순수 코드만 반환하십시오.',
