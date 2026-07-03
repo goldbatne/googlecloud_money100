@@ -6,10 +6,13 @@
 //
 //  흐름 요약:
 //    1. Google Play 매출 순위 스크래핑
-//    2. Scout  — 공식 가이드 기준 시스템명·재화명 수집 (최대 3회)
-//    3. Writer — Gemini API 분석 문서 초안 생성 (딥서치)
-//    4. Mermaid 다이어그램 검증 및 자동 복구 (Fast-Track → QA Agent)
-//    5. MD / PDF / HTML 3포맷 변환 후 Google Drive 날짜별 폴더에 저장
+//    2. 공식 사이트 직접 크롤링 (0회차) — 스토어·개발사 URL fetch → factSheet 주입
+//    3. Scout — 공식 가이드 기준 시스템명·재화명 수집 (최대 4회, YouTube 포함)
+//    4. Writer Phase1 — 구조·다이어그램 집중 (01~04섹션)
+//    5. DIAG — 다이어그램 전담 재생성 (Phase1 텍스트 기반, 검색 없음)
+//    6. Writer Phase2 — 수치·분석·비교 집중 (05~09섹션)
+//    7. Mermaid 다이어그램 QA (Fast-Track → QA Agent → 폴백 자동생성)
+//    8. MD / PDF / HTML 3포맷 변환 후 Google Drive 날짜별 폴더에 저장
 //
 //  환경 변수 (필수):
 //    GCP_CLIENT_ID       - Google OAuth2 클라이언트 ID
@@ -302,10 +305,10 @@ function getKSTDateParts() {
 }
 
 /**
- * Gemini API 호출 공통 래퍼 — rate-limit 에러 시 동적 대기 후 재시도
- * @param {GenerativeModel} model
- * @param {string}          prompt
- * @param {number}          maxRetries
+ * Gemini API 호출 공통 래퍼 — rate-limit 에러 시 키 전환 후 재시도
+ * @param {() => GenerativeModel} modelFactory  호출 시마다 새 키로 모델 인스턴스 반환
+ * @param {string}                prompt
+ * @param {number}                maxRetries
  * @returns {Promise<string>} 응답 텍스트. maxRetries 초과 시 빈 문자열 반환.
  */
 async function callGeminiWithRetry(modelFactory, prompt, maxRetries = 3) {
@@ -627,6 +630,8 @@ function sanitizeMermaid(rawCode) {
 //  mode 파라미터:
 //    'pdf'  → Base64 인라인 SVG img 태그 (PDF 렌더링용, 외부 fetch 없음)
 //    'html' → Kroki URL img 태그 (HTML 경량화, 파일 크기 절감)
+//
+//  주의: HTML mode는 현재 미사용 — 내부적으로 'pdf' 모드(Base64 인라인)로 통일됨
 // =============================================================================
 
 // 원본 Mermaid 코드에서 다이어그램 타입 감지
@@ -1315,254 +1320,6 @@ ${s.instruction}
 `;
 }
 
-
-// =============================================================================
-//  📝  buildAnalysisPrompt — 분석 문서 생성 프롬프트
-// =============================================================================
-
-function buildAnalysisPrompt(game, rank, category, factSheet = '') {
-    const storeUrl = `https://play.google.com/store/apps/details?id=${game.appId}`;
-
-    return `
-# ⚠️ [최우선] 타겟 게임 고정 — 위반 시 전체 출력 무효
-* **게임명:** ${game.title}
-* **개발사:** ${game.developer}
-* **앱 ID:**  ${game.appId}
-* **URL:**    ${storeUrl}
-* **매출 순위:** ${rank}위
-* **분석 영역:** ${category}
-
-### 혼동 방지 체크리스트
-- [ ] 모든 검색에 "${game.title}" + 앱ID "${game.appId}" 를 함께 사용했는가?
-- [ ] 같은 IP의 다른 게임 데이터를 혼용하지 않았는가?
-- [ ] 확인 불가 데이터는 추측 없이 **"데이터 비공개 (검색 불가)"** 로 표기했는가?
-
----
-
-# Step 0: 메타데이터 (절대 수정 금지)
-메인장르: (RPG / MMORPG / 방치형 / SLG/전략 / 캐주얼/퍼즐 / 액션/슈팅 / SNG/시뮬레이션 / 스포츠/레이싱 / 카지노/보드 / 기타 중 하나)
-서브장르: (15자 이내)
-시스템:   (15자 이내 명사형, 파일명에 사용)
-
-# [고정 어휘 사전] — 이 목록 외 명칭 임의 생성 금지
-${factSheet ? `${factSheet}
-
-## 준수 규칙
-1. [시스템명] 목록의 이름 → 반드시 그대로 사용 (동의어·축약·번역 금지)
-2. [재화명] 목록의 이름   → 반드시 그대로 사용
-3. 목록에 없는 명칭       → "데이터 비공개 (검색 불가)"로 표기
-4. 출처 신뢰도 낮음 항목  → 해당 명칭 사용 시 *(출처 미검증)* 주석 추가
-` : `⚠️ 팩트 사전 없음 — 딥 서치 집중 모드.\n다음 순서로 반드시 검색하여 데이터를 최대한 수집할 것:\n1. ${game.title} 공식 사이트·공식 카페·개발사 공지 검색\n2. ${game.title} 인벤·루리웹·나무위키·아카라이브 검색 (수치 테이블 우선)\n3. ${game.title} fandom wiki·game8·reddit 검색 (영문 데이터)\n4. ${game.title} 쿨타임·확률·수치·스탯·레벨 전용 검색\n5. ${game.title} 유저 측정값·벤치마크·타 게임 비교 검색\n검색 결과 없는 항목만 데이터 비공개 표기. 최소 5회 검색 후 포기.`}
-
-# Step 1: 분석 시스템 특정
-1. [${category}] 영역의 시그니처 시스템 1개를 [고정 어휘 사전]의 [시스템명]에서 선택하십시오.
-2. 유저가 게임 내에서 직접 클릭하는 **정확한 UI 텍스트(메뉴명)** 기준으로 분석하십시오.
-
-# Step 2: 역기획 분석 문서 작성 — 9섹션 (원본 수준 심층 문서)
-
-## 작성 원칙
-- **팩트 항목**: 검색으로 확인된 사실만 기술. 확인 불가는 "데이터 비공개 (검색 불가)" 표기. 항목 말미에 \`> 출처: URL\` 필수.
-- **분석 항목**: 팩트 항목에서 확인된 근거에 한해서만 추론. 근거 없는 주장 금지. 단일 출처 기반 추론은 *(단일 출처)* 주석.
-- **다이어그램**: 각 섹션에 지정된 Mermaid 다이어그램을 반드시 포함할 것. 데이터 부족 시에도 확인된 요소만으로 최소 구조 생성.
-- **깊이 기준**: 각 항목은 최소 3문장 이상. 수치·명칭·흐름이 구체적으로 명시된 경우만 작성.
-- **수치 우선**: 텍스트 서술보다 수치·표·다이어그램 우선. 같은 정보라면 표로 정리.
-- **소항목 확장**: 확인된 데이터가 충분하면 소항목을 추가 생성해도 됨 (예: 5.3 레벨별 스탯 테이블, 5.4 확률 테이블 등).
-
----
-
-## 01. 정의서 (Definition)
-팩트 항목. 아래 소항목을 모두 작성하십시오.
-
-### 1.1 시스템 개요
-검색으로 확인된 시스템 정의·구성 요소·해금 조건 요약. 공식 설명 우선.
-
-### 1.2 핵심 목적
-- **유저 관점**: 이 시스템을 통해 유저가 얻는 것 (보상·진행·재미)
-- **사업 관점**: 수익화·리텐션·트래픽 유도 관점에서의 역할
-
-### 1.3 용어 정의
-확인된 게임 내 고유 용어·명칭을 표 형식으로 정리. (★ 표 강제)
-| 용어 | 정의 | 비고 |
-
-### 1.4 분석 범위 및 관련 시스템
-이 시스템과 연결된 다른 시스템·재화·콘텐츠 열거.
-
----
-
-## 02. 구조도 (Architecture)
-팩트 항목.
-
-### 2.1 메인 시스템 구조도
-확인된 서브시스템 간 연결 관계. (★ Mermaid \`graph LR\` 강제)
-
-### 2.2 서브시스템 구조도
-주요 서브시스템 1개를 선택해 내부 구조 상세화. (★ Mermaid \`graph TD\` 강제)
-데이터가 부족한 경우 확인된 요소만으로 간략 구조도 생성.
-
----
-
-## 03. 플로우차트 (Flowchart)
-팩트 항목.
-
-### 3.1 메인 이용 플로우
-유저의 핵심 이용 흐름 전체. (★ Mermaid \`flowchart TD\` 강제)
-
-### 3.2 핵심 서브 플로우
-가장 중요한 서브 플로우 1개 (예: 획득·소비·강화 등). (★ Mermaid \`flowchart TD\` 강제)
-
----
-
-## 04. 상세 명세서 (Specification)
-팩트 항목. 확인된 항목만 작성. 미확인은 "데이터 비공개 (검색 불가)" 표기.
-
-### 4.1 UI 레이아웃
-확인된 화면 구성·메뉴 뎁스·주요 버튼 배치 기술.
-
-### 4.2 인터랙션 명세
-확인된 주요 유저 액션과 시스템 반응 (입력 → 출력 형태로 기술).
-
-### 4.3 상태 전이
-확인된 시스템 내 주요 상태 변화. (★ Mermaid \`stateDiagram-v2\` 강제)
-데이터 부족 시 확인된 2개 이상의 상태만으로 최소 다이어그램 생성.
-
----
-
-## 05. 데이터 테이블 (Data Table)
-팩트 항목. 공식·커뮤니티에서 확인된 수치만 기재. 미확인 수치는 "비공개" 표기.
-
-### 5.1 재화 Source / Sink 테이블
-확인된 재화 획득처와 소모처. (★ 표 강제)
-| 재화명 | 주요 획득처 | 주요 소모처 | 일일 획득량(추정) |
-
-### 5.2 핵심 수치 밸런스
-확인된 수치·비율·쿨타임·확률 등. (★ 표 강제, 최소 10행 이상 목표)
-아래 카테고리별로 확인된 수치를 최대한 채울 것. 없는 항목만 "데이터 비공개" 표기.
-- **진행·성장**: 레벨 상한, 스테이지 수, 강화 단계, 승급 조건
-- **시간·쿨타임**: 쿨타임, 대기 시간, 자동 처리 주기, 세션 길이
-- **확률·배율**: 가챠 확률, 강화 성공률, 크리티컬 배율, 천장 수치
-- **재화·경제**: 일일 획득량, 소모량, 교환 비율, 패스 가격
-- **전투·밸런스**: 기본 스탯, 데미지 공식, 속성 배율, PvP 매칭 범위
-| 항목 | 수치 | 출처 |
-
-### 5.3 DB 테이블 스키마 (구현 참고용)
-확인된 시스템 구조를 기반으로 실제 구현에 필요한 핵심 테이블을 추론. (★ 표 강제)
-검색·공략·나무위키 등에서 확인된 데이터 구조만 사용. 추론 항목은 *(추론)* 주석.
-| 테이블명 | 주요 컬럼 | 설명 | 레코드 규모(추정) |
-
-### 5.4 ORM 코드 템플릿 (TypeScript / Python)
-5.3에서 도출된 핵심 테이블 2~3개를 TypeScript(Prisma 스키마) 또는 Python(SQLAlchemy) 형식으로 작성.
-확인된 컬럼·타입·관계만 사용. 불확실한 부분은 TODO 주석으로 표기.
-실제 구현 시 참고용이며, 게임 내부 실제 스키마와 다를 수 있음.
-
-\`\`\`typescript
-// Prisma schema 예시 (확인된 구조 기반)
-model TableName {
-  id        Int      @id @default(autoincrement())
-  // 확인된 컬럼 추가
-}
-\`\`\`
-
-### 5.5 핵심 API·이벤트 흐름
-확인된 주요 유저 액션에 대응하는 서버 처리 흐름 추론.
-| 액션 | 요청 파라미터(추론) | 서버 처리(추론) | 응답(추론) |
-확인된 UX 흐름 기반으로만 추론. *(추론)* 주석 필수.
-
----
-
-## 06. 기획 의도 및 심리 설계 분석 (Design Intent)
-분석 항목. 위 01~05에서 수집된 팩트만을 근거로 작성.
-
-### 6.1 설계 의도
-이 시스템이 왜 이렇게 설계됐는가. 수익화·리텐션·트래픽 유도 관점에서 근거 기반 추론.
-
-### 6.2 심리 설계
-수집된 팩트(수치·흐름·구조)에서 역으로 읽히는 심리 트리거를 구체적 근거와 함께 기술.
-근거 없는 트리거 명칭 나열 금지. FOMO·손실 회피·보상 스케줄·사회적 비교 등 해당하는 것만.
-
----
-
-## 07. 문제점 및 개선 제안 (Issues & Suggestions)
-분석 항목. 수집된 팩트 기반으로만 작성. (★ 표 강제)
-
-### 7.1 문제점
-| 항목 | 문제 내용 | 근거 |
-
-### 7.2 개선 제안
-| 문제 항목 | 개선 방향 | 타 게임 사례 |
-동일 장르 타 게임의 검색 가능한 사례를 근거로 구체적 대안 제시.
-
-## 08. 벤치마크 비교 분석 (Benchmark)
-분석 항목. 동일 장르 타 게임과의 시스템 비교. (★ 표 강제)
-
-### 8.1 비교 대상 선정
-검색으로 확인된 동일 장르·유사 시스템 보유 게임 2~3개 선정.
-선정 기준: 장르 동일, 해당 시스템 존재 확인, 공개 데이터 존재.
-
-### 8.2 비교 매트릭스
-| 항목 | ${game.title} | 비교 게임 A | 비교 게임 B |
-확인된 수치·구조·UX 항목 기준으로 비교. 확인 불가 항목은 "데이터 없음" 표기.
-
-### 8.3 트레이드오프 분석
-이 게임 시스템의 설계가 타 게임 대비 어떤 것을 얻고 무엇을 포기했는지.
-근거 기반 서술. 추측 없이 확인된 차이점만.
-
-### 8.4 실개발 인사이트
-타 게임 사례에서 이 시스템에 적용 가능한 개선 아이디어.
-검색으로 확인된 타 게임의 실제 구현 방식 기반으로만 작성.
-
-## 09. 예외 처리 및 엣지케이스 (Edge Cases)
-분석 항목. 확인된 버그·예외 상황·동시성 이슈만 기술. (★ 표 강제)
-
-### 9.1 엣지케이스
-| 케이스 | 발생 조건 | 시스템 반응 | 출처 |
-검색·커뮤니티에서 확인된 비정상 동작·버그·의도치 않은 상호작용.
-예: 무한 루프, 수치 오버플로우, 동시 입력 충돌, 경계값 초과.
-
-### 9.2 사이드 이펙트
-이 시스템이 다른 시스템에 미치는 의도치 않은 영향.
-확인된 사례만 기술. 추측 금지.
-
-### 9.3 동시성·레이스 컨디션
-멀티플레이·길드·실시간 이벤트 등에서 발생 가능한 동시 접근 이슈.
-확인된 사례 또는 구조상 명백한 리스크만 기술.
-
-### 9.4 예외 상황별 플로우
-확인된 주요 예외 상황의 처리 흐름. (★ Mermaid \`flowchart TD\` — 확인된 케이스만)
-데이터 없으면 생략 가능.
-
----
-
-# ★ 딥 서치 철칙
-1. 모든 검색은 "${game.title}" + 앱ID "${game.appId}" 기준. 다른 게임이 검색되면 즉시 키워드 변경.
-   - **FALLBACK 모드(팩트 사전 없음)**: 검색 횟수 제한 없음. 수치가 나올 때까지 다양한 키워드로 반복 탐색.
-2. 출처 우선순위:
-   - **1순위**: 공식 사이트·공식 카페·개발사 공지
-   - **2순위**: 인벤(inven.co.kr)·루리웹(ruliweb.com)·Game8(game8.co)·NGA·유튜브 심층 공략·리뷰
-   - **3순위**: 나무위키·아카라이브·팬덤 위키·레딧 (교차검증 소스로 적극 활용)
-3. 나무위키·아카라이브·팬덤 위키는 수치·테이블 정보가 상세한 경우 적극 인용. 반드시 교차검증 후 *(단독)* 주석 없이 사용 가능.
-4. **수치 데이터 탐색 강화 (최우선 과제)**: 처리 시간·쿨타임·재화 획득량·확률·스탯 수치는 반드시 별도 검색으로 확인 시도.
-   - 검색어 예: "${game.title} 쿨타임 수치", "${game.title} cooldown stats", "${game.title} 재화 획득량 하루"
-   - 검색어 예: "${game.title} 확률 공개", "${game.title} 가챠 확률", "${game.title} 강화 성공률"
-   - 검색어 예: "${game.title} 스탯 수치", "${game.title} 레벨 상한", "${game.title} 천장"
-   - 커뮤니티(인벤·레딧·나무위키·아카라이브·팬덤 위키)에서 유저 측정값도 적극 활용. *(커뮤니티 측정값)* 주석.
-   - **나무위키·팬덤 위키는 수치 테이블이 상세한 경우가 많음 — 반드시 확인.**
-   - **"데이터 비공개" 표기 전 최소 3가지 다른 검색어로 재시도 필수.** 섣불리 포기 금지.
-   - 수치 행이 10개 미만이면 추가 검색 시도. 10개 이상 채우는 것이 목표.
-5. 복수 출처 교차 검증 필수. 단일 출처만 있으면 *(단일 출처)* 주석.
-6. 1~3순위 모두 검색 불가 시에만 [ABORT_NO_DATA] 출력.
-
-# Output Constraints
-* [Mermaid 규칙]  화살표 텍스트(\`-->|텍스트|\`)는 10자 이내. 대괄호/중괄호 안에 콜론·따옴표·쉼표 절대 금지.
-* [노드 ID 규칙]  노드 ID는 반드시 띄어쓰기 없는 영문+숫자 조합(예: A1, NodeB2). 한글 노드 ID 절대 금지.
-* [subgraph 규칙] 모든 \`subgraph\` 이름은 반드시 큰따옴표로 감쌀 것.
-* [erDiagram 규칙] \`erDiagram\` 속성은 따옴표·코멘트 없이 '타입 이름' 형식만.
-* [금지 패턴]    노드 레이블 괄호 중첩(\`([...])\`) 절대 금지. 화살표 기호 혼용 절대 금지.
-* 데이터가 전혀 없는 비주류 게임이면 [ABORT_NO_DATA] 한 줄만 출력하고 종료.
-* 타겟 게임이 아닌 다른 게임의 데이터가 섞였다고 판단되면 [IP_CONFUSED] 한 줄만 출력하고 종료.
-`;
-}
-
-
 // =============================================================================
 //  📝  buildAnalysisPrompt_Phase1 — 구조·다이어그램 집중 (01~04섹션)
 // =============================================================================
@@ -1895,9 +1652,6 @@ async function main() {
     // ── 0. 환경 변수 사전 검증 ──────────────────────────────────────────────
     const REQUIRED_ENV = ['GCP_CLIENT_ID', 'GCP_CLIENT_SECRET', 'GCP_REFRESH_TOKEN', 'GDRIVE_FOLDER_ID', 'GEMINI_API_KEY'];
     // YOUTUBE_API_KEY는 선택 사항 — 없으면 Scout 4회차 자동 스킵
-    if (process.env.YOUTUBE_API_KEY) {
-        console.log('  -> 📺 YouTube API 키 감지 — Scout 4회차 활성화');
-    }
     const missingEnv   = REQUIRED_ENV.filter(k => !process.env[k]);
     if (missingEnv.length > 0) {
         console.error(`❌ 필수 환경 변수 누락: ${missingEnv.join(', ')}`);
@@ -1937,9 +1691,14 @@ async function main() {
         const targetGames = allGames.slice(START_RANK - 1, END_RANK);
         console.log(`\n[${dateString}] 🗄️  파이프라인 가동 (${START_RANK}위 ~ ${END_RANK}위, 총 ${targetGames.length}개)`);
 
+        const YOUTUBE_API_KEY   = process.env.YOUTUBE_API_KEY;
+        const MAX_SCOUT_RETRIES = YOUTUBE_API_KEY ? 4 : 3;
+        if (YOUTUBE_API_KEY) console.log('  -> 📺 YouTube API 키 감지 — Scout 4회차 활성화');
+
         const stats = {
             full: 0, partial: 0, skipped: 0, diagram: 0,
             scoutOk: 0, scoutFallback: 0, scoutCross: 0, scoutAbort: 0,
+            phase2Ok: 0, phase2Fail: 0,
         };
 
         // ── 4. 게임별 분석 문서 생성 루프 ────────────────────────────────────
@@ -2030,8 +1789,6 @@ async function main() {
 
             // 4-4. Scout — 공식 가이드 기준 시스템명 수집 (최대 4회)
             // 4회차: YouTube Data API 자막·설명 수집 (YOUTUBE_API_KEY 없으면 자동 스킵)
-            const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-            const MAX_SCOUT_RETRIES = YOUTUBE_API_KEY ? 4 : 3;
 
             // 크롤링 데이터를 factSheet 초기값으로 주입
             let factSheet    = officialCrawlData
@@ -2167,7 +1924,7 @@ async function main() {
                 stats.scoutOk++;
             }
 
-            // 4-4. 분석 문서 초안 생성 — Phase 1 (구조·다이어그램 집중)
+            // 4-5. 분석 문서 초안 생성 — Phase 1 (구조·다이어그램 집중)
             console.log(`  -> 📐 [Phase 1] 구조·다이어그램 생성 중...`);
             const phase1Raw = await callGeminiWithRetry(draftFactory, buildAnalysisPrompt_Phase1(game, rank, category, factSheet), MAX_DRAFT_RETRIES);
 
@@ -2210,7 +1967,7 @@ async function main() {
             }
             console.log(`  -> ✅ [Phase 1] 완료`);
 
-            // 4-5. 다이어그램 전담 재생성 (Phase1 직후 — 검색 없이 구조 파악 후 집중 생성)
+            // 4-6. 다이어그램 전담 재생성 (Phase1 직후 — 검색 없이 구조 파악 후 집중 생성)
             console.log(`  -> 🎨 [DIAG] 다이어그램 전담 재생성 중...`);
             await delay(30000); // 짧은 냉각 후 다이어그램 전담 호출
             const diagRaw = await callGeminiWithRetry(draftFactory, buildDiagramPrompt(game, phase1Text, factSheet), MAX_DRAFT_RETRIES);
@@ -2222,7 +1979,7 @@ async function main() {
                 console.log(`  -> ⚠️  [DIAG] 다이어그램 재생성 실패 — Phase1 원본 유지`);
             }
 
-            // 4-6. Phase 2 (데이터·수치·분석·비교 집중)
+            // 4-7. Phase 2 (데이터·수치·분석·비교 집중)
             console.log(`  -> ⏳ [Phase 1→2] 키 냉각 대기 (150초)...`);
             await delay(150000);
             console.log(`  -> 📊 [Phase 2] 데이터·수치·분석 생성 중...`);
@@ -2232,14 +1989,19 @@ async function main() {
                 console.log(`  -> ⚠️  [Phase 2] 생성 실패 — Phase 1만으로 진행`);
             }
             const phase2Text = phase2Raw || '';
-            if (phase2Text) console.log(`  -> ✅ [Phase 2] 완료`);
+            if (phase2Text) {
+                stats.phase2Ok++;
+                console.log(`  -> ✅ [Phase 2] 완료`);
+            } else {
+                stats.phase2Fail++;
+            }
 
-            // 4-6. Phase 1 + Phase 2 합치기
+            // 4-8. Phase 1 + Phase 2 합치기
             // Phase 1에서 메타데이터(메인장르/서브장르/시스템) 추출 후
             // 두 결과를 하나의 MD로 병합
             const combinedRaw = phase1Text + '\n\n---\n\n' + phase2Text;
 
-            // 4-7. 리포트 텍스트 정제
+            // 4-9. 리포트 텍스트 정제
             const effectiveReport = combinedRaw;
             let reportText = effectiveReport
                 .replace(/^```(markdown|md)?/i, '')
@@ -2374,7 +2136,7 @@ async function main() {
                 reportText,
             ].filter(Boolean).join('\n');
 
-            // 4-6. Mermaid 블록 처리 — PDF/HTML용 소스에만 적용 (mode별 분리)
+            // 4-10. Mermaid 블록 처리 — PDF/HTML용 소스에만 적용 (mode별 분리)
             // mdLlmText는 Mermaid 코드블록 원본 유지 (LLM 학습 노이즈 방지)
             // PDF: Base64 인라인 SVG (오프라인 렌더링, GitHub Actions sandbox 대응)
             // HTML: Kroki URL (경량화, 외부 공유 최적화)
@@ -2388,11 +2150,11 @@ async function main() {
                 console.log(`  -> ⚠️  [HTML 다이어그램 일부 실패 ${htmlBrokenCount}개] 폴백으로 대체 후 저장 진행`);
             }
 
-            // 4-7. 파일명 생성 (카테고리 코드 포함)
+            // 4-11. 파일명 생성 (카테고리 코드 포함)
             const safeTitle    = game.title.replace(/[/\\?%*:|"<>]/g, '_');
             const baseFileName = `[${dateString}]_${String(rank).padStart(3, '0')}위_${safeTitle}_(${coreSystemName})_[${categoryCode}]`;
 
-            // 4-8. MD / PDF / HTML 저장
+            // 4-12. MD / PDF / HTML 저장
             // MD: mdLlmText (순수 텍스트 + YAML frontmatter, LLM 학습용)
             // PDF/HTML: visualMdText (SVG 치환 완료, 사람이 읽는 시각화 문서)
             const uploads = [
@@ -2431,7 +2193,7 @@ async function main() {
                 }
             }
 
-            // 4-9. 결과 집계
+            // 4-13. 결과 집계
             if      (savedCount === 3) { stats.full++; }
             else if (savedCount >= 1)  { stats.partial++; console.log(`  -> ⚠️  일부 포맷 저장 실패 (${savedCount}/3)`); }
             else                       { console.error(`  -> ❌ 모든 포맷 저장 실패`); }
@@ -2454,6 +2216,9 @@ async function main() {
         console.log(`  Scout FALLBACK (딥서치)  ${stats.scoutFallback}개`);
         console.log(`  Scout CROSS (IP 오염)    ${stats.scoutCross}개`);
         console.log(`  Scout ABORT (데이터 없음)${stats.scoutAbort}개`);
+        console.log(`──────────────────────────────────────────────────────`);
+        console.log(`  Phase2 성공              ${stats.phase2Ok}개`);
+        console.log(`  Phase2 실패 (P1만 저장)  ${stats.phase2Fail}개`);
         console.log(`${'='.repeat(56)}`);
         console.log(`🎉 Google Drive 동기화 완료`);
         console.log(`${'='.repeat(56)}\n`);
