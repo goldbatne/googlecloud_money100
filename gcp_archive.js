@@ -267,6 +267,37 @@ const apiKeyQueue = new ApiKeyQueue(
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * HTML 특수문자 이스케이프 — <title> 등 HTML 삽입 지점용
+ * 게임명에 <, >, ", & 가 포함돼도 문서 구조가 깨지지 않도록 방어
+ */
+const escapeHtml = s => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/**
+ * YAML frontmatter 문자열 값 안전 처리
+ * 큰따옴표·역슬래시 이스케이프 + 개행을 공백으로 치환 (YAML 파싱 깨짐 방지)
+ */
+const yamlStr = s => `"${String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ')}"`;
+
+/**
+ * 외부 텍스트 정화 — 프롬프트 인젝션 완화
+ * 크롤링 HTML·스토어 설명·YouTube 설명 등 신뢰할 수 없는 외부 텍스트가
+ * 파이프라인 제어 토큰([ABORT_NO_DATA], [IP_CONFUSED])을 포함하면
+ * Writer/Scout이 오작동(정상 게임 스킵 등)할 수 있으므로 프롬프트 주입 전 제거.
+ */
+function sanitizeExternalText(text) {
+    return String(text)
+        .replace(/\[ABORT_NO_DATA\]/gi, '')
+        .replace(/\[IP_CONFUSED\]/gi, '');
+}
+
+/**
  * PDF 변환 래퍼 — EADDRINUSE 포트 충돌 시 대기 후 재시도
  * md-to-pdf 내부 서버가 이전 실패 후 포트를 점유한 채 남을 수 있음.
  * 최대 3회 재시도, 실패 간 5초 대기로 포트 해제 여유를 줌.
@@ -349,6 +380,13 @@ function buildKrokiUrl(mermaidCode) {
 }
 
 /**
+ * Kroki fetch 래퍼 — 15초 타임아웃
+ * Kroki 응답 지연 시 게임 1개 처리가 무한 대기하는 것을 방지.
+ * 타임아웃 시 AbortError throw → 호출부의 기존 catch 폴백 경로로 흡수됨.
+ */
+const fetchKroki = url => fetch(url, { signal: AbortSignal.timeout(15000) });
+
+/**
  * Kroki 응답 정상 SVG 여부 검증
  * Kroki는 파싱 오류 시에도 HTTP 200을 반환하며 SVG 내에 에러 문자열을 포함함
  */
@@ -407,11 +445,16 @@ async function createDriveFolders({ yearStr, monthStr, dayStr }) {
     return { mdFolderId, pdfFolderId, htmlFolderId };
 }
 
-/** 동일 파일명 존재 확인 (멱등성 보장). 확인 실패 시 false 반환해 덮어쓰기 허용. */
+/**
+ * 동일 파일명 존재 확인 (멱등성 보장).
+ * 확인 실패 시 false 반환해 업로드를 시도함 — 단, Drive의 files.create는
+ * 덮어쓰기가 아니라 동일 이름 파일을 하나 더 생성하므로 중복 가능성 있음.
+ */
 async function fileExistsInDrive(fileName, folderId) {
     try {
+        const safeName = fileName.replace(/'/g, "\\'"); // 아포스트로피 포함 게임명(예: Assassin's~) 쿼리 오류 방지
         const res = await drive.files.list({
-            q:      `name = '${fileName}' and '${folderId}' in parents and trashed = false`,
+            q:      `name = '${safeName}' and '${folderId}' in parents and trashed = false`,
             fields: 'files(id)',
         });
         return res.data.files.length > 0;
@@ -489,9 +532,10 @@ function initModels(genAI, gameTitle, appId) {
 //
 //  처리 순서:
 //    1. 공통 전처리 (유니코드 제로폭 문자, 주석 제거) — 따옴표 제거는 아직 하지 않음
-//    2. 다이어그램 타입 감지 후 경로 분기 (erDiagram / flowchart·graph)
-//       - erDiagram: 따옴표가 관계 레이블에 필수이므로 독립 경로에서 처리
-//       - flowchart:  공통 특수문자 제거 후 토큰화 처리
+//    2. 다이어그램 타입 감지 후 경로 분기 (stateDiagram / erDiagram / flowchart·graph)
+//       - stateDiagram: 공통 전처리만 적용하고 그대로 통과 (하단 참고)
+//       - erDiagram:    따옴표가 관계 레이블에 필수이므로 독립 경로에서 처리
+//       - flowchart:    공통 특수문자 제거 후 토큰화 처리
 //    ※ 이전 구조는 공통 전처리에서 " 를 먼저 제거한 뒤 erDiagram에서 "has"를
 //       다시 붙이는 순서 의존성이 있었음 → 분기 먼저 하는 구조로 수정
 // =============================================================================
@@ -505,6 +549,17 @@ function sanitizeMermaid(rawCode) {
         .replace(/%%.*$/gm, '')                // %% Mermaid 주석 제거
         .replace(/^\s*(\d+\.|[-*])\s+/gm, '') // 목록 기호(1. / - / *) 제거
         .trim();
+
+    // ── 1.5단계: stateDiagram 전용 경로 (구조 변형 없이 통과) ────────────────
+    // flowchart 경로를 태우면 반드시 깨짐:
+    //   - ["'*#] 제거 → 시작/종료 상태 [*] 가 [] 로 파괴됨
+    //   - 콜론 레이블 변환 → `S1 --> S2 : 진행`이 flowchart 파이프 문법으로 오변환
+    // stateDiagram은 콜론 레이블이 정식 문법이므로 공통 전처리만 적용하고 반환.
+    // 잔여 파싱 오류는 QA Agent가 처리 (기존엔 QA 출력도 재차 여기서 파괴돼
+    // 상태 다이어그램이 구조적으로 항상 폴백行이었음).
+    if (/^stateDiagram/i.test(code)) {
+        return code;
+    }
 
     // ── 2단계: erDiagram 전용 경로 ──────────────────────────────────────────
     // 따옴표 제거 전에 감지 → erDiagram은 관계 레이블에 "has" 큰따옴표 필수
@@ -627,11 +682,10 @@ function sanitizeMermaid(rawCode) {
 //    3단계 폴백:       QA 실패 시 게임 정보 기반 초단순 다이어그램 자동 생성
 //  최종 실패 시에도 폴백 다이어그램으로 대체 — 다이어그램 0개 방지
 //
-//  mode 파라미터:
-//    'pdf'  → Base64 인라인 SVG img 태그 (PDF 렌더링용, 외부 fetch 없음)
-//    'html' → Kroki URL img 태그 (HTML 경량화, 파일 크기 절감)
-//
-//  주의: HTML mode는 현재 미사용 — 내부적으로 'pdf' 모드(Base64 인라인)로 통일됨
+//  출력: Base64 인라인 SVG img 태그 (PDF·HTML 공통 — 오프라인 렌더링 안전)
+//  ※ 게임당 1회만 호출하고 결과를 PDF·HTML 양쪽에 재사용할 것.
+//    QA Agent는 비결정적이므로 2회 호출 시 포맷 간 다이어그램이 달라질 수 있고,
+//    Kroki fetch·Gemini 호출·딜레이 비용도 2배가 됨.
 // =============================================================================
 
 // 원본 Mermaid 코드에서 다이어그램 타입 감지
@@ -657,7 +711,7 @@ function buildFallbackDiagram(diagramType) {
     return 'graph LR\n    A1[시작] --> B1[핵심]\n    B1 --> C1[보상]\n    C1 --> D1[반복]\n    D1 --> B1';
 }
 
-async function processMermaidBlocks(reportText, qaFactory, mode = 'pdf') {
+async function processMermaidBlocks(reportText, qaFactory) {
     const mermaidBlockRegex = /```mermaid\s*([\s\S]*?)```/gi;
     let mdText      = '';
     let lastIndex   = 0;
@@ -673,14 +727,14 @@ async function processMermaidBlocks(reportText, qaFactory, mode = 'pdf') {
         let cachedSvg = null; // 검증에 사용한 SVG 재사용 (이중 fetch 방지)
         try {
             const cleaned = sanitizeMermaid(originalMermaid);
-            const res     = await fetch(buildKrokiUrl(cleaned));
+            const res     = await fetchKroki(buildKrokiUrl(cleaned));
             const svg     = await res.text();
             if (isValidKrokiSvg(res, svg)) {
                 console.log(`  -> ⚡ [Fast-Track 성공]`);
                 fixedMermaid = cleaned;
                 cachedSvg    = svg;
             }
-        } catch { /* fetch 실패 → 2단계로 */ }
+        } catch { /* fetch 실패/타임아웃 → 2단계로 */ }
 
         // ── 2단계: QA Agent ──────────────────────────────────────────────
         if (!fixedMermaid) {
@@ -708,18 +762,19 @@ ${currentMermaid}`;
                     const cleaned = sanitizeMermaid(
                         qaResultText.replace(/```mermaid\s*/ig, '').replace(/```/g, '').trim()
                     );
-                    const res = await fetch(buildKrokiUrl(cleaned));
+                    const res = await fetchKroki(buildKrokiUrl(cleaned));
                     const svg = await res.text();
 
                     if (isValidKrokiSvg(res, svg)) {
                         console.log(`  -> ✅ [시도 ${attempt}/${MAX_QA_RETRIES}] QA 복구 성공!`);
                         fixedMermaid = cleaned;
+                        cachedSvg    = svg; // QA 통과 시에도 SVG 재사용 (결과 반영 단계 fetch 절약)
                         await delay(15000);
                         break;
                     } else {
                         currentMermaid = cleaned;
                     }
-                } catch { /* Kroki fetch 실패 → 다음 시도 */ }
+                } catch { /* Kroki fetch 실패/타임아웃 → 다음 시도 */ }
 
                 await delay(15000);
             }
@@ -728,9 +783,9 @@ ${currentMermaid}`;
         // ── 결과 반영 ────────────────────────────────────────────────────
         if (fixedMermaid) {
             // PDF/HTML 공통: Base64 인라인 SVG — 오프라인 렌더링, 장기 보존 안전
-            // cachedSvg: Fast-Track 검증 시 이미 받은 SVG → 재사용해 Kroki 요청 절약
+            // cachedSvg: Fast-Track/QA 검증 시 이미 받은 SVG → 재사용해 Kroki 요청 절약
             try {
-                const svgStr = cachedSvg ?? await fetch(buildKrokiUrl(fixedMermaid)).then(r => r.text());
+                const svgStr = cachedSvg ?? await fetchKroki(buildKrokiUrl(fixedMermaid)).then(r => r.text());
                 const b64    = Buffer.from(svgStr).toString('base64');
                 mdText += `\n\n<div class="diagram-wrap">` +
                           `<img src="data:image/svg+xml;base64,${b64}" alt="시스템 다이어그램" />` +
@@ -748,7 +803,7 @@ ${currentMermaid}`;
             const diagType = detectDiagramType(originalMermaid);
             const fallback = buildFallbackDiagram(diagType);
             try {
-                const res = await fetch(buildKrokiUrl(fallback));
+                const res = await fetchKroki(buildKrokiUrl(fallback));
                 const svg = await res.text();
                 if (isValidKrokiSvg(res, svg)) {
                     console.log(`  -> 🔄 [폴백 다이어그램] QA 실패 → 자동 생성 다이어그램으로 대체`);
@@ -789,7 +844,7 @@ function buildHtmlReport(gameTitle, bodyHtml) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${gameTitle} 분석 문서</title>
+    <title>${escapeHtml(gameTitle)} 분석 문서</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1125,14 +1180,15 @@ async function fetchYouTubeScoutData(game) {
     for (const q of queries) {
         try {
             const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&maxResults=3&key=${apiKey}`;
-            const res  = await fetch(url);
+            const res  = await fetch(url, { signal: AbortSignal.timeout(10000) }); // 응답 지연 시 Scout 4회차 행 방지
             if (!res.ok) continue;
             const data = await res.json();
             if (!data.items) continue;
             for (const item of data.items) {
                 const s = item.snippet;
                 // 제목 + 설명 앞 500자만 수집 (토큰 절약)
-                snippets.push(`[영상제목] ${s.title}\n[설명] ${(s.description || '').substring(0, 500)}`);
+                // 외부 텍스트 → 제어 토큰 정화 후 프롬프트 주입 (인젝션 완화)
+                snippets.push(`[영상제목] ${sanitizeExternalText(s.title)}\n[설명] ${sanitizeExternalText((s.description || '').substring(0, 500))}`);
             }
         } catch { continue; }
     }
@@ -1635,11 +1691,15 @@ function replaceDiagramsInPhase1(phase1Text, newDiagramText) {
     if (newDiagrams.length === 0) return phase1Text;
 
     let diagIdx = 0;
-    const result = phase1Text.replace(/```mermaid[\s\S]*?```/gi, () => {
+    let result = phase1Text.replace(/```mermaid[\s\S]*?```/gi, () => {
         if (diagIdx < newDiagrams.length) return newDiagrams[diagIdx++];
         return '';
     });
     if (diagIdx === 0) return result + '\n\n' + newDiagrams.join('\n\n');
+    // Phase1 블록 수 < 새 다이어그램 수인 경우 잉여분을 뒤에 덧붙임 (조용한 유실 방지)
+    if (diagIdx < newDiagrams.length) {
+        result += '\n\n' + newDiagrams.slice(diagIdx).join('\n\n');
+    }
     return result;
 }
 
@@ -1703,9 +1763,9 @@ async function main() {
 
         // ── 4. 게임별 분석 문서 생성 루프 ────────────────────────────────────
         for (let idx = 0; idx < targetGames.length; idx++) {
-            // 게임 간 RPM 버퍼 — 첫 게임은 스킵, 이후 90초 대기
+            // 게임 간 RPM 버퍼 — 첫 게임은 스킵, 이후 120초 대기
             // (프로젝트당 RPM 10 × 5키 = 분당 50회. 게임 1개당 최소 7~10회 호출이므로
-            //  90초 간격이면 각 게임 처리 중 키 풀 냉각 시간 확보)
+            //  120초 간격이면 각 게임 처리 중 키 풀 냉각 시간 확보)
             if (idx > 0) await delay(120000);
 
             const game     = targetGames[idx];
@@ -1771,14 +1831,15 @@ async function main() {
                             .trim()
                             .substring(0, 8000); // 8000자 제한
                         if (text.length > 200) {
-                            officialCrawlData += `\n\n## 크롤링 출처: ${url}\n${text}`;
+                            // 외부 HTML → 제어 토큰 정화 후 프롬프트 주입 (인젝션 완화)
+                            officialCrawlData += `\n\n## 크롤링 출처: ${url}\n${sanitizeExternalText(text)}`;
                         }
                     } catch { /* 개별 URL 실패 시 스킵 */ }
                 }
 
-                // 스토어 설명 + 최근 업데이트 추가
-                if (appDescription) officialCrawlData += `\n\n## 스토어 설명\n${appDescription.substring(0, 3000)}`;
-                if (appRecentChanges) officialCrawlData += `\n\n## 최근 업데이트 내역\n${appRecentChanges.substring(0, 2000)}`;
+                // 스토어 설명 + 최근 업데이트 추가 (프롬프트 주입분은 정화 적용)
+                if (appDescription) officialCrawlData += `\n\n## 스토어 설명\n${sanitizeExternalText(appDescription.substring(0, 3000))}`;
+                if (appRecentChanges) officialCrawlData += `\n\n## 최근 업데이트 내역\n${sanitizeExternalText(appRecentChanges.substring(0, 2000))}`;
 
                 if (officialCrawlData.length > 300) {
                     console.log(`  -> 🌐 [CRAWL] 공식 사이트 크롤링 완료 (${officialCrawlData.length}자)`);
@@ -1942,6 +2003,9 @@ async function main() {
                 stats.skipped++;
                 continue;
             }
+
+            // var 호이스팅 의존 제거 — 블록 밖에서 let으로 선언 (strict 코드베이스 일관성)
+            let phase1Text;
             if (phase1Raw.includes('[IP_CONFUSED]')) {
                 if (factSheet) {
                     console.log(`  -> ⚠️  [WRITER-IP] IP_CONFUSED — factSheet 제거 후 Phase1 재시도...`);
@@ -1953,7 +2017,7 @@ async function main() {
                         stats.skipped++;
                         continue;
                     }
-                    var phase1Text = retryP1;
+                    phase1Text = retryP1;
                     console.log(`  -> ✅ [WRITER-IP] Phase1 딥서치 재시도 성공`);
                 } else {
                     const errMsg = `[${rank}위] ${game.title} — Writer IP_CONFUSED`;
@@ -1963,7 +2027,7 @@ async function main() {
                     continue;
                 }
             } else {
-                var phase1Text = phase1Raw;
+                phase1Text = phase1Raw;
             }
             console.log(`  -> ✅ [Phase 1] 완료`);
 
@@ -2002,11 +2066,17 @@ async function main() {
             const combinedRaw = phase1Text + '\n\n---\n\n' + phase2Text;
 
             // 4-9. 리포트 텍스트 정제
+            // 끝 ``` 무조건 제거는 리포트가 정당한 코드블록(5.5 ORM / 9.4 flowchart)으로
+            // 끝날 때 닫는 펜스를 지워 마지막 블록을 깨뜨림 → 문서 전체가
+            // ```markdown 펜스로 래핑된 경우에만 앞뒤 짝을 함께 제거하도록 수정
             const effectiveReport = combinedRaw;
-            let reportText = effectiveReport
-                .replace(/^```(markdown|md)?/i, '')
-                .replace(/```$/i, '')
-                .trim();
+            let reportText = effectiveReport.trim();
+            if (/^```(markdown|md)?\s*\n/i.test(reportText)) {
+                reportText = reportText
+                    .replace(/^```(markdown|md)?\s*\n/i, '')
+                    .replace(/\n?```\s*$/, '');
+            }
+            reportText = reportText.trim();
 
             // Phase1+Phase2 병합 — 메타데이터 중복 제거
             // Phase2 시작 구분자(## 05.) 이후 중복 메타데이터 블록 제거
@@ -2023,8 +2093,8 @@ async function main() {
                 reportText = phase1Part + phase2Part;
             }
 
-            // 파일명용 핵심 시스템명 추출
-            const systemMatch  = reportText.match(/시스템:\s*([^\n]+)/);
+            // 파일명용 핵심 시스템명 추출 (^+m 앵커 — 메타데이터 줄만 매칭)
+            const systemMatch  = reportText.match(/^시스템:\s*([^\n]+)/m);
             const coreSystemName = systemMatch
                 ? systemMatch[1].replace(/\[\/META\]/gi, '').replace(/[/\\?%*:|"<>]/g, '_').trim()
                 : '시스템_통합_분석';
@@ -2049,44 +2119,48 @@ async function main() {
             const categoryCode = CATEGORY_CODE[category] || 'ETC';
 
             // 메타데이터 줄 제거 (파일명용 시스템명은 이미 추출 완료)
+            // ^ + m 플래그로 줄 시작만 매칭 — 본문 중간의 "…핵심 시스템: 강화…" 같은
+            // 문장이 오폭으로 잘려나가는 것 방지. 줄 끝 개행까지 제거(\n?는 마지막 줄 대응).
             reportText = reportText
-                .replace(/메인장르:.*?\n/g, '')
-                .replace(/서브장르:.*?\n/g, '')
-                .replace(/시스템:.*?\n/g,   '')
+                .replace(/^메인장르:.*\n?/gm, '')
+                .replace(/^서브장르:.*\n?/gm, '')
+                .replace(/^시스템:.*\n?/gm,   '')
                 .trim();
 
             // ── MD 전용: YAML frontmatter + 순수 텍스트 본문 ────────────────
             // LLM 학습용. SVG/Base64 없음. Mermaid 코드블록 원본 유지.
+            // 문자열 값은 전부 yamlStr로 이스케이프 — 따옴표/개행 포함 시 YAML 파손 방지
             const mdLlmText = [
                 '---',
-                `title: "${game.title} 분석 문서"`,
-                `date: "${dateString}"`,
+                `title: ${yamlStr(game.title + ' 분석 문서')}`,
+                `date: ${yamlStr(dateString)}`,
                 `rank: ${rank}`,
-                `app_id: "${game.appId}"`,
-                `developer: "${detail.developer     || game.developer}"`,
-                `developer_id: "${detail.developerId  || ''}"`,
-                `release_date: "${releaseDate}"`,
-                `updated: "${detail.updated ? new Date(detail.updated * 1000).toISOString().slice(0, 10) : ''}"`,
-                `version: "${detail.version         || ''}"`,
-                `category: "${category}"`,
-                `category_code: "${categoryCode}"`,
-                `core_system: "${coreSystemName}"`,
-                `genre: "${detail.genre             || ''}"`,
-                `genre_id: "${detail.genreId        || ''}"`,
-                `content_rating: "${detail.contentRating || ''}"`,
+                `app_id: ${yamlStr(game.appId)}`,
+                `developer: ${yamlStr(detail.developer     || game.developer)}`,
+                `developer_id: ${yamlStr(detail.developerId  || '')}`,
+                `release_date: ${yamlStr(releaseDate)}`,
+                // updated: 라이브러리 버전에 따라 초/밀리초 epoch이 혼재 → 1e12 초과면 이미 ms로 간주
+                `updated: ${yamlStr(detail.updated ? new Date(detail.updated > 1e12 ? detail.updated : detail.updated * 1000).toISOString().slice(0, 10) : '')}`,
+                `version: ${yamlStr(detail.version         || '')}`,
+                `category: ${yamlStr(category)}`,
+                `category_code: ${yamlStr(categoryCode)}`,
+                `core_system: ${yamlStr(coreSystemName)}`,
+                `genre: ${yamlStr(detail.genre             || '')}`,
+                `genre_id: ${yamlStr(detail.genreId        || '')}`,
+                `content_rating: ${yamlStr(detail.contentRating || '')}`,
                 `score: ${detail.score              || 0}`,
                 `ratings: ${detail.ratings          || 0}`,
                 `reviews: ${detail.reviews          || 0}`,
-                `installs: "${detail.installs        || ''}"`,
+                `installs: ${yamlStr(detail.installs        || '')}`,
                 `min_installs: ${detail.minInstalls  || 0}`,
                 `free: ${detail.free                ?? true}`,
                 `price: ${detail.price              || 0}`,
-                `price_text: "${detail.priceText    || '무료'}"`,
+                `price_text: ${yamlStr(detail.priceText    || '무료')}`,
                 `ad_supported: ${detail.adSupported  ?? false}`,
                 `offers_iap: ${detail.offersIAP      ?? false}`,
-                `iap_range: "${detail.IAPRange       || ''}"`,
-                `android_version: "${detail.androidVersion || ''}"`,
-                `summary: "${(detail.summary        || '').replace(/"/g, "'")}"`,
+                `iap_range: ${yamlStr(detail.IAPRange       || '')}`,
+                `android_version: ${yamlStr(detail.androidVersion || '')}`,
+                `summary: ${yamlStr(detail.summary        || '')}`,
                 '---',
                 '',
                 // 스토어 설명 — YAML에 넣으면 깨지므로 본문 첫 섹션으로 분리
@@ -2136,18 +2210,15 @@ async function main() {
                 reportText,
             ].filter(Boolean).join('\n');
 
-            // 4-10. Mermaid 블록 처리 — PDF/HTML용 소스에만 적용 (mode별 분리)
+            // 4-10. Mermaid 블록 처리 — 게임당 1회만 실행 후 PDF/HTML 양쪽에 재사용
             // mdLlmText는 Mermaid 코드블록 원본 유지 (LLM 학습 노이즈 방지)
-            // PDF: Base64 인라인 SVG (오프라인 렌더링, GitHub Actions sandbox 대응)
-            // HTML: Kroki URL (경량화, 외부 공유 최적화)
-            const { mdText: pdfMdText, brokenCount }       = await processMermaidBlocks(reportTextForVisual, qaFactory, 'pdf');
+            // Base64 인라인 SVG: 오프라인 렌더링 + 포맷 간 다이어그램 일치 보장
+            // (기존: pdf/html 2회 호출 → Kroki fetch·QA Gemini 호출·딜레이가 전부 2배였고
+            //  QA 비결정성 때문에 두 포맷의 다이어그램이 서로 달라질 수 있었음)
+            const { mdText: visualMdText, brokenCount } = await processMermaidBlocks(reportTextForVisual, qaFactory);
             if (brokenCount > 0) {
                 stats.diagram++;
-                console.log(`  -> ⚠️  [다이어그램 일부 실패 ${brokenCount}개] 폴백으로 대체 후 저장 진행`);
-            }
-            const { mdText: htmlMdText, brokenCount: htmlBrokenCount } = await processMermaidBlocks(reportTextForVisual, qaFactory, 'html');
-            if (htmlBrokenCount > 0) {
-                console.log(`  -> ⚠️  [HTML 다이어그램 일부 실패 ${htmlBrokenCount}개] 폴백으로 대체 후 저장 진행`);
+                console.log(`  -> ⚠️  [다이어그램 ${brokenCount}개 블록 제거] 나머지 콘텐츠로 저장 진행`);
             }
 
             // 4-11. 파일명 생성 (카테고리 코드 포함)
@@ -2156,7 +2227,7 @@ async function main() {
 
             // 4-12. MD / PDF / HTML 저장
             // MD: mdLlmText (순수 텍스트 + YAML frontmatter, LLM 학습용)
-            // PDF/HTML: visualMdText (SVG 치환 완료, 사람이 읽는 시각화 문서)
+            // PDF/HTML: visualMdText (SVG 치환 완료, 사람이 읽는 시각화 문서 — 동일 소스 공유)
             const uploads = [
                 { tag: 'MD',   ext: '.md',   folderId: mdFolderId,   mimeType: 'text/markdown',   content: mdLlmText,    validate: () => mdLlmText.length >= 10 },
                 { tag: 'PDF',  ext: '.pdf',  folderId: pdfFolderId,  mimeType: 'application/pdf', content: null,          validate: null },
@@ -2170,10 +2241,10 @@ async function main() {
                     let content = u.content;
                     if (u.tag === 'PDF') {
                         console.log(`  -> 📄 [PDF]  변환 시작...`);
-                        content = await convertToPdf(pdfMdText, PDF_OPTIONS);
+                        content = await convertToPdf(visualMdText, PDF_OPTIONS);
                     } else if (u.tag === 'HTML') {
                         console.log(`  -> 🌐 [HTML] 변환 시작...`);
-                        const parsedBody = marked.parse(htmlMdText);
+                        const parsedBody = marked.parse(visualMdText);
                         if (!parsedBody?.trim()) throw new Error('HTML 파싱 결과가 비어있습니다.');
                         content = buildHtmlReport(game.title, parsedBody);
                     } else if (u.validate && !u.validate()) {
@@ -2202,14 +2273,17 @@ async function main() {
         }
 
         // ── 5. 최종 결산 ─────────────────────────────────────────────────────
+        // stats.diagram: 폴백까지 실패해 블록이 제거된 게임 수 — 문서 자체는 저장됨.
+        //   (기존 결산은 이를 "스킵/저장 안 됨"으로 표기하고 skipped에서 차감해
+        //    자동 스킵 수치가 음수가 될 수 있었음 → 실제 동작 기준으로 수정)
         const failedCount = targetGames.length - stats.full - stats.partial - stats.skipped;
         console.log(`\n${'='.repeat(56)}`);
         console.log(`[${dateString}] 📊 최종 결산`);
         console.log(`  목표 처리량              ${targetGames.length}개`);
         console.log(`  완전 성공 (3포맷 모두)   ${stats.full}개`);
         console.log(`  부분 성공 (1~2포맷)      ${stats.partial}개`);
-        console.log(`  다이어그램 복구 실패 스킵 ${stats.diagram}개  ← 저장 안 됨`);
-        console.log(`  자동 스킵 (데이터 부족)  ${stats.skipped - stats.diagram}개`);
+        console.log(`  다이어그램 블록 제거 발생 ${stats.diagram}개  (문서는 저장됨)`);
+        console.log(`  자동 스킵 (데이터 부족)  ${stats.skipped}개`);
         console.log(`  완전 실패                ${failedCount}개`);
         console.log(`──────────────────────────────────────────────────────`);
         console.log(`  Scout 성공 (factSheet)   ${stats.scoutOk}개`);
@@ -2222,6 +2296,13 @@ async function main() {
         console.log(`${'='.repeat(56)}`);
         console.log(`🎉 Google Drive 동기화 완료`);
         console.log(`${'='.repeat(56)}\n`);
+
+        // 누적 에러 상세 출력 — 결산 수치만으로는 어떤 게임이 왜 실패했는지 알 수 없음
+        if (errorLog.length > 0) {
+            console.error(`\n📋 에러 상세 (${errorLog.length}건):`);
+            errorLog.forEach((e, i) => console.error(`  ${String(i + 1).padStart(2, ' ')}. ${e}`));
+            console.error('');
+        }
 
 
 
