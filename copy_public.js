@@ -55,7 +55,7 @@ async function main() {
         const tgtMonthId = await getOrCreateFolder(monthStr, tgtYearId);
 
         // ★ 오직 pdf와 html만 타겟팅 (md 배제)
-        const formats = ['pdf', 'html'];
+        const formats = ['html'];
         
         for (const format of formats) {
             console.log(`\n🔍 [${format.toUpperCase()}] 포맷을 분리 전시합니다...`);
