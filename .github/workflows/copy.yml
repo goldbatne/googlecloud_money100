@@ -2,16 +2,20 @@ name: Drive Backup Copier
 
 on:
   workflow_run:
-    workflows: ["GCP Data Lake Archive"] 
+    workflows: ["GCP Data Lake Archive"]
     types:
       - completed
-  workflow_dispatch: 
+
+  workflow_dispatch:
 
 jobs:
   copy_files:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    
+
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+      || github.event_name == 'workflow_dispatch' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,32 +28,45 @@ jobs:
       - name: Install dependencies
         run: npm install googleapis
 
-      # [Step 1] 메인 사본 (MD/PDF/HTML 전체 미러링)
-      - name: Run Main Copy Script
+      # Step 1
+      # AI 학습용 Drive에는 MD만 복사
+      - name: Copy MD Files
         env:
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }} 
+
+          TARGET_GDRIVE_FOLDER_ID: ${{ secrets.TARGET_GDRIVE_FOLDER_ID }}
+
         run: node copy.js
 
-      # [Step 2] 대외 쇼룸 (PDF/HTML 전용, 26일_pdf 포맷 구조)
-      - name: Run Public Showroom Script
+      # Step 2
+      # 공개/열람용 Drive에는 HTML만 복사
+      - name: Copy HTML Files
         env:
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          PUBLIC_GDRIVE_FOLDER_ID: ${{ secrets.PUBLIC_GDRIVE_FOLDER_ID }} # ★ 변수명 교체 완료
+
+          PUBLIC_GDRIVE_FOLDER_ID: ${{ secrets.PUBLIC_GDRIVE_FOLDER_ID }}
+
         run: node copy_public.js
 
-      # [Step 3] 로컬 AI 작업장 (MD 전용)
-      - name: Run AI Workspace Script
+      # Step 3
+      # 위 두 복사가 모두 정상 성공했을 때만
+      # 오늘자 원본 MD/PDF/HTML을 삭제
+      - name: Delete Original Files
+        if: ${{ success() }}
+
         env:
           GCP_CLIENT_ID: ${{ secrets.GCP_CLIENT_ID }}
           GCP_CLIENT_SECRET: ${{ secrets.GCP_CLIENT_SECRET }}
           GCP_REFRESH_TOKEN: ${{ secrets.GCP_REFRESH_TOKEN }}
+
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          AI_WORKSPACE_FOLDER_ID: ${{ secrets.AI_WORKSPACE_FOLDER_ID }} 
-        run: node copy_ai.js
+
+        run: node cleanup_original.js
