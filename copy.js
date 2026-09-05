@@ -118,7 +118,7 @@ async function main() {
     }
 
     try {
-        const formats = ['md', 'pdf', 'html'];
+        const formats = ['md'];
         for (const fmt of formats) {
             await copyFilesForFormat(fmt, yearStr, monthStr, dayStr);
         }
